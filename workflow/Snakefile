@@ -1,0 +1,38 @@
+# Autoscience Project Snakemake Workflow
+import os
+
+
+os.environ['DFT_DIR'] = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
+
+rmg_runs_dir = ''
+rmg_input_file =  ''
+rule run_rmg:
+    shell:
+        "echo hello"
+
+rule get_ranked_reactions:
+    shell:
+        "echo hello"
+
+rule get_ranked_species:
+    shell:
+        "echo hello"
+
+
+
+species_index = 3
+rule calculate_species_thermo:
+    conda:
+        'envs/tst_env.yaml'
+    shell:
+        """
+        echo $DFT_DIR
+        """
+
+rule load_model:
+    conda:
+        'envs/tst_env.yaml'
+    shell:
+        """
+        python scripts/generate_species_list.py
+        """

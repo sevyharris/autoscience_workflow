@@ -1,0 +1,23 @@
+name: autotst_env
+channels:
+  - defaults
+  - cantera
+  - pytorch
+  - anaconda
+  - conda-forge
+  - sharris7
+dependencies:
+  - python
+  - rmg::rmg == 3.0.0
+  - conda-forge::ase
+  - conda-forge::cclib >= 1.7.0
+  - conda-forge::py3dmol
+  - rmg::rdkit >= 2019.03.4
+  - codecov
+  - nose
+  - matplotlib
+  - numpy
+  - pandas
+  - ase
+  - matplotlib
+  - sharris7::job_manager

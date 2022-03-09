@@ -29,10 +29,18 @@ rule calculate_species_thermo:
         echo $DFT_DIR
         """
 
-rule load_model:
+rule species_list:
     conda:
         'envs/tst_env.yaml'
     shell:
         """
         python scripts/generate_species_list.py
+        """
+
+rule reaction_list:
+    conda:
+        'envs/tst_env.yaml'
+    shell:
+        """
+        python scripts/generate_reaction_list.py
         """

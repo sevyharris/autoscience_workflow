@@ -4,6 +4,8 @@ import os
 import glob
 import sys
 
+import pandas as pd
+
 import ase.io
 
 import rmgpy.species
@@ -17,9 +19,22 @@ from autotst.calculator.gaussian import Gaussian
 import job_manager
 
 
+DFT_DIR = os.environ['DFT_DIR']
 
+
+species_index = int(sys.argv[1])
+
+# Load the species from the official species list
+scripts_dir = os.path.dirname(__file__)
+species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
+
+species_df = pd.read_csv(species_csv)
+
+print(species_df)
+exit(0)
 # Load the model:
 # load the model
+
 chemkin_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/chem_annotated.inp"
 dictionary_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/species_dictionary.txt"
 transport_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/tran.dat"

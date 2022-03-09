@@ -21,12 +21,17 @@ rule get_ranked_species:
 
 
 species_index = 3
-rule calculate_species_thermo:
+rule species_thermo:
     conda:
         'envs/tst_env.yaml'
     shell:
         """
-        echo $DFT_DIR
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/species_thermo.py 4
+            #sbatch scripts/run_species_thermo.sh
+            conda deactivate'
         """
 
 rule species_list:

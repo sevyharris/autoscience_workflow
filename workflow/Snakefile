@@ -20,8 +20,9 @@ rule get_ranked_species:
 
 
 
-species_index = 3
+species_index = 4
 rule species_thermo:
+    # This should probably be renamed to something like calc_conformers
     conda:
         'envs/tst_env.yaml'
     shell:
@@ -29,10 +30,20 @@ rule species_thermo:
         bash -c '
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
-            python scripts/species_thermo.py 4
-            #sbatch scripts/run_species_thermo.sh
+            sbatch scripts/run_species_thermo.sh {species_index}
             conda deactivate'
         """
+
+rule get_lowest_conformer:
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            sbatch scripts/run_get_lowest_conformer.sh {species_index}
+            conda deactivate'
+        """
+
 
 rule species_list:
     conda:

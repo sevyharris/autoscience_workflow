@@ -20,54 +20,27 @@ import job_manager
 
 
 DFT_DIR = os.environ['DFT_DIR']
-
-
 species_index = int(sys.argv[1])
+print(f'Species index is {species_index}')
+
 
 # Load the species from the official species list
 scripts_dir = os.path.dirname(__file__)
 species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
-
 species_df = pd.read_csv(species_csv)
 
-print(species_df)
-exit(0)
-# Load the model:
-# load the model
+species_smiles = species_df.SMILES[species_index]
+spec = autotst.species.Species([species_smiles])
 
-chemkin_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/chem_annotated.inp"
-dictionary_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/species_dictionary.txt"
-transport_path = "/home/harris.se/rmg/rmg_tools/uncertainty/nheptane/tran.dat"
-species_list, reaction_list = rmgpy.chemkin.load_chemkin_file(
-    chemkin_path,
-    dictionary_path=dictionary_path,
-    transport_path=transport_path
-)
-print (f"Loaded model with {len(species_list)} species and {len(reaction_list)} reactions")
-
-
-
-# TODO connect ranked list to this code. for now, just change up the species index
-# TODO connect the ranked list to this code
-species_index = 80  # 3 corresponds to n-heptane, the top species
-species_index = 79  # 3 corresponds to n-heptane, the top species
-species_index = 71  # incomplete
-species_index = 68  # incomplete
-
-species_index = int(sys.argv[1])
-
-spec_rmg = species_list[species_index]
-spec = autotst.species.Species([spec_rmg.smiles])
-
-print(f"loaded species {spec_rmg}")
-thermo_base_dir = '/work/westgroup/harris.se/autoscience/dft/thermo'
+print(f"loaded species {species_smiles}")
+thermo_base_dir = os.path.join(DFT_DIR, 'thermo')
 species_base_dir = os.path.join(thermo_base_dir, f'species_{species_index:04}')
 os.makedirs(species_base_dir, exist_ok=True)
 
 
 # generate conformers
 spec.generate_conformers(ase_calculator=Hotbit())
-n_conformers = len(spec.conformers[spec_rmg.smiles])
+n_conformers = len(spec.conformers[species_smiles])
 print(f'{n_conformers} found with Hotbit')
 
 
@@ -75,7 +48,7 @@ print(f'{n_conformers} found with Hotbit')
 conformer_dir = os.path.join(species_base_dir, 'conformers')
 # write Gaussian input files
 print("generating gaussian input files")
-for i, cf in enumerate(spec.conformers[spec_rmg.smiles]):
+for i, cf in enumerate(spec.conformers[species_smiles]):
     gaussian = Gaussian(conformer=cf)
     calc = gaussian.get_conformer_calc()
     calc.label = f'conformer_{i:04}'
@@ -127,8 +100,4 @@ gaussian_conformers_job = job_manager.SlurmJob()
 slurm_cmd = f"sbatch {slurm_run_file}"
 gaussian_conformers_job.submit(slurm_cmd)
 os.chdir(start_dir)
-
-
-
-
 

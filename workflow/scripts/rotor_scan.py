@@ -76,11 +76,27 @@ def write_scan_file(fname, conformer, torsion_index, degree_delta=10.0):
     scan_job_lines.append("")
 
     # bond order and connectivity - not sure if this is needed
+    rdkit_bonds = zm.rdmol.GetBonds()
+    bond_list = [f'{i + 1}' for i in range(0, len(rdkit_bonds))]
+    for bond in rdkit_bonds:
+        bond_start = zm.a2z(bond.GetBeginAtomIdx())
+        bond_end = zm.a2z(bond.GetEndAtomIdx())
+        bond_order = bond.GetBondTypeAsDouble()
+        bond_list[bond_start] += f' {bond_end + 1} {bond_order}'
+    for bond in bond_list:
+        scan_job_lines.append(bond)
+    scan_job_lines.append("")
 
     # dihedral to scan
     indices = conformer.torsions[torsion_index].atom_indices
+    # convert to z-matrix index
+    first = zm.a2z(indices[0]) + 1
+    second = zm.a2z(indices[1]) + 1
+    third = zm.a2z(indices[2]) + 1
+    fourth = zm.a2z(indices[3]) + 1
+
     N_increments = int(360.0 / degree_delta)
-    scan_job_lines.append(f"D {indices[0] + 1} {indices[1] + 1} {indices[2] + 1} {indices[3] + 1} S {N_increments} {float(degree_delta)}")
+    scan_job_lines.append(f"D {first} {second} {third} {fourth} S {N_increments} {float(degree_delta)}")
 
     scan_job_lines.append("")
     with open(fname, 'w') as f:

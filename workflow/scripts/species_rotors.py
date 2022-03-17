@@ -10,6 +10,8 @@ import autotst.calculator.gaussian
 
 import job_manager
 
+import rotor_scan
+
 # Read in the species
 DFT_DIR = os.environ['DFT_DIR']
 species_index = int(sys.argv[1])
@@ -46,16 +48,19 @@ torsions = new_cf.get_torsions()
 n_rotors = len(torsions)
 
 print("generating gaussian input files")
-gaussian = autotst.calculator.gaussian.Gaussian(conformer=new_cf)
+# gaussian = autotst.calculator.gaussian.Gaussian(conformer=new_cf)
 for i, torsion in enumerate(new_cf.torsions):
-    print(torsion)
-    calc = gaussian.get_rotor_calc(torsion_index=i)
-    calc.label = f'rotor_{i:04}'
-    calc.directory = rotor_dir
-    calc.parameters.pop('scratch')
-    calc.parameters.pop('multiplicity')
-    calc.parameters['mult'] = new_cf.rmg_molecule.multiplicity
-    calc.write_input(new_cf.ase_molecule)
+    # print(torsion)
+    # calc = gaussian.get_rotor_calc(torsion_index=i)
+    # calc.label = f'rotor_{i:04}'
+    # calc.directory = rotor_dir
+    # calc.parameters.pop('scratch')
+    # calc.parameters.pop('multiplicity')
+    # calc.parameters['mult'] = new_cf.rmg_molecule.multiplicity
+    # calc.write_input(new_cf.ase_molecule)
+
+    fname = os.path.join(rotor_dir, f'rotor_{i:04}.com')
+    rotor_scan.write_scan_file(fname, new_cf, i)
 
 
 # Make a slurm script to run all rotors

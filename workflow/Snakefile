@@ -19,8 +19,10 @@ rule get_ranked_species:
         "echo hello"
 
 
-
-species_index = 4
+try:
+    species_index = config['species_index']
+except KeyError:
+    species_index = 30
 rule species_thermo:
     # This should probably be renamed to something like calc_conformers
     conda:
@@ -41,6 +43,25 @@ rule get_lowest_conformer:
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
             sbatch scripts/run_get_lowest_conformer.sh {species_index}
+            conda deactivate'
+        """
+rule run_rotors:
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/species_rotors.py {species_index}
+            conda deactivate'
+        """
+
+rule setup_arkane_thermo:
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/make_arkane_thermo_input.py {species_index}
             conda deactivate'
         """
 

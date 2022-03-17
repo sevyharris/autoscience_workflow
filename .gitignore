@@ -131,3 +131,10 @@ dmypy.json
 
 # Snakemake
 .snakemake
+
+
+# vscode
+.vscode
+
+# results
+results

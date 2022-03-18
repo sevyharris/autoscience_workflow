@@ -5,7 +5,7 @@ import os
 os.environ['DFT_DIR'] = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
 
 rmg_runs_dir = ''
-rmg_input_file =  ''
+rmg_input_file = ''
 rule run_rmg:
     shell:
         "echo hello"
@@ -23,6 +23,7 @@ try:
     species_index = config['species_index']
 except KeyError:
     species_index = 30
+
 rule species_thermo:
     # This should probably be renamed to something like calc_conformers
     conda:
@@ -36,6 +37,7 @@ rule species_thermo:
             conda deactivate'
         """
 
+# TODO delete this? change it to print_lowest_conformer?
 rule get_lowest_conformer:
     shell:
         """
@@ -45,12 +47,16 @@ rule get_lowest_conformer:
             sbatch scripts/run_get_lowest_conformer.sh {species_index}
             conda deactivate'
         """
+
 rule run_rotors:
+    input:
+        get_lowest_conformer_script = os.path.join('scripts', 'get_lowest_conformer.py')
     shell:
         """
         bash -c '
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
+            python {input.get_lowest_conformer_script} {species_index}
             python scripts/species_rotors.py {species_index}
             conda deactivate'
         """

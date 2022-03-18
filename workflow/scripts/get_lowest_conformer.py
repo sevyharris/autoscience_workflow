@@ -18,10 +18,11 @@ import rmgpy.chemkin
 
 import autotst.species
 import autotst.calculator.gaussian
-# from autotst.calculator.gaussian import Gaussian
 
-# TODO add job manager to environment?
-# import job_manager
+
+print_only = False  # option to just display the lowest energy conformer without copying
+if len(sys.argv) > 2 and sys.argv[2] == 'print_only':
+    print_only = True
 
 
 DFT_DIR = os.environ['DFT_DIR']
@@ -60,6 +61,8 @@ for i, conformer_file in enumerate(conformer_files):
 
 lowest_idx = np.argmin(energies)
 print(f'lowest energy one is {conformer_files[lowest_idx]}')
+if print_only:
+    exit(0)
 
 # copy the lowest energy one into the rotor folder
 os.makedirs(rotor_dir, exist_ok=True)

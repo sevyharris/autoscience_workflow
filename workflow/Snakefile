@@ -37,17 +37,6 @@ rule species_thermo:
             conda deactivate'
         """
 
-# TODO delete this? change it to print_lowest_conformer?
-rule get_lowest_conformer:
-    shell:
-        """
-        bash -c '
-            . $HOME/.bashrc
-            conda activate /work/westgroup/harris.se/tst_env
-            sbatch scripts/run_get_lowest_conformer.sh {species_index}
-            conda deactivate'
-        """
-
 rule run_rotors:
     input:
         get_lowest_conformer_script = os.path.join('scripts', 'get_lowest_conformer.py')
@@ -86,4 +75,17 @@ rule reaction_list:
     shell:
         """
         python scripts/generate_reaction_list.py
+        """
+
+rule print_lowest_conformer:
+    # Rule to identify the lowest energy conformer
+    input:
+        print_lowest_conformer_script = os.path.join('scripts', 'get_lowest_conformer.py')
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python {input.print_lowest_conformer_script} {species_index} print_only
+            conda deactivate'
         """

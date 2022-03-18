@@ -2,7 +2,18 @@
 import os
 
 
-os.environ['DFT_DIR'] = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
+DFT_DIR = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
+os.environ['DFT_DIR'] = DFT_DIR
+try:
+    species_index = config['species_index']
+except KeyError:
+    species_index = 30
+
+species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}')
+confomers_dir = os.path.join(species_dir, 'conformers')
+rotors_dir = os.path.join(species_dir, 'rotors')
+arkane_dir = os.path.join(species_dir, 'arkane')
+
 
 rmg_runs_dir = ''
 rmg_input_file = ''
@@ -18,11 +29,6 @@ rule get_ranked_species:
     shell:
         "echo hello"
 
-
-try:
-    species_index = config['species_index']
-except KeyError:
-    species_index = 30
 
 rule species_thermo:
     # This should probably be renamed to something like calc_conformers
@@ -51,12 +57,28 @@ rule run_rotors:
         """
 
 rule setup_arkane_thermo:
+    output:
+        run_arkane_script = os.path.join(arkane_dir, 'run_arkane.sh')
     shell:
         """
         bash -c '
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
             python scripts/make_arkane_thermo_input.py {species_index}
+            conda deactivate'
+        """
+
+
+rule run_arkane_thermo:
+    input:
+        run_arkane_script = os.path.join(arkane_dir, 'run_arkane.sh')
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /home/harris.se/anaconda3/envs/rmg_env/
+            cd {arkane_dir}
+            sbatch {input.run_arkane_script}
             conda deactivate'
         """
 

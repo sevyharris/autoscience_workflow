@@ -112,11 +112,14 @@ def write_conformer_file(conformer, gauss_log, arkane_dir, include_rotors=True):
                f"spinMultiplicity = {conformer.rmg_molecule.multiplicity}",
                ""]
     model_chemistry = 'M06-2X/cc-pVTZ'
-    output += ["energy = {", f"    '{model_chemistry}': Log('{gauss_log}'),", "}", ""]  # fix this
 
-    output += [f"geometry = Log('{gauss_log}')", ""]
+    # use relative path for easy transfer -- assume we will copy the log files into the Arkane folder
+    gauss_log_relative = os.path.basename(gauss_log)
+    output += ["energy = {", f"    '{model_chemistry}': Log('{gauss_log_relative}'),", "}", ""]  # fix this
+
+    output += [f"geometry = Log('{gauss_log_relative}')", ""]
     output += [
-        f"frequencies = Log('{gauss_log}')", ""]
+        f"frequencies = Log('{gauss_log_relative}')", ""]
 
     if include_rotors:
         output += ["rotors = ["]
@@ -157,3 +160,9 @@ lines = [
 with open(input_file, 'w') as f:
     f.writelines(lines)
 
+
+# copy a run script into the arkane directory
+run_script = os.path.join(arkane_dir, 'run_arkane.sh')
+with open(run_script, 'w') as f:
+    f.write('#!/bin/bash\n\n')
+    f.write('python ~/rmg/RMG-Py/Arkane.py input.py\n\n')

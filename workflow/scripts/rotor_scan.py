@@ -63,9 +63,9 @@ def write_scan_file(fname, conformer, torsion_index, degree_delta=10.0):
             tokens.append('0')
         else:
             raise NotImplementedError
-        
+
         scan_job_lines.append(' '.join(tokens))
-    
+
     scan_job_lines.append("")
     for bond in bonds:
         scan_job_lines.append(bond)
@@ -75,20 +75,27 @@ def write_scan_file(fname, conformer, torsion_index, degree_delta=10.0):
         scan_job_lines.append(dihedral)
     scan_job_lines.append("")
 
-    # bond order and connectivity - not sure if this is needed
-    rdkit_bonds = zm.rdmol.GetBonds()
-    bond_list = [f'{i + 1}' for i in range(0, len(rdkit_bonds))]
-    for bond in rdkit_bonds:
-        bond_start = zm.a2z(bond.GetBeginAtomIdx())
-        bond_end = zm.a2z(bond.GetEndAtomIdx())
-        bond_order = bond.GetBondTypeAsDouble()
-        bond_list[bond_start] += f' {bond_end + 1} {bond_order}'
-    for bond in bond_list:
-        scan_job_lines.append(bond)
-    scan_job_lines.append("")
+    # # bond order and connectivity - not sure if this is needed
+    # rdkit_bonds = zm.rdmol.GetBonds()
+    # bond_list = [f'{i + 1}' for i in range(0, len(rdkit_bonds))]
+    # for bond in rdkit_bonds:
+    #     bond_start = zm.a2z(bond.GetBeginAtomIdx())
+    #     bond_end = zm.a2z(bond.GetEndAtomIdx())
+    #     bond_order = bond.GetBondTypeAsDouble()
+    #     bond_list[bond_start] += f' {bond_end + 1} {bond_order}'
+    # for bond in bond_list:
+    #     scan_job_lines.append(bond)
+    # scan_job_lines.append("")
 
     # dihedral to scan
     indices = conformer.torsions[torsion_index].atom_indices
+
+    # # don't convert to z-matrix index??
+    # first = indices[0] + 1
+    # second = indices[1] + 1
+    # third = indices[2] + 1
+    # fourth = indices[3] + 1
+
     # convert to z-matrix index
     first = zm.a2z(indices[0]) + 1
     second = zm.a2z(indices[1]) + 1

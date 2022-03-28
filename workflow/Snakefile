@@ -9,10 +9,18 @@ try:
 except KeyError:
     species_index = 30
 
+try:
+    reaction_index = config['reaction_index']
+except KeyError:
+    reaction_index = 1
+
+
 species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}')
 confomers_dir = os.path.join(species_dir, 'conformers')
 rotors_dir = os.path.join(species_dir, 'rotors')
 arkane_dir = os.path.join(species_dir, 'arkane')
+
+reaction_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
 
 
 rmg_runs_dir = ''
@@ -81,6 +89,21 @@ rule run_arkane_thermo:
             sbatch {input.run_arkane_script}
             conda deactivate'
         """
+
+
+rule reaction_kinetics:
+    # determine which species calculations are needed to make the reaction calculation
+    input:
+        collect_species_script = os.path.join('scripts', 'kinetics', 'collect_species.py')
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python {input.collect_species_script} {reaction_index}
+            conda deactivate'
+        """
+
 
 
 rule species_list:

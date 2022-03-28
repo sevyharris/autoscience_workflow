@@ -14,7 +14,7 @@ def write_scan_file(fname, conformer, torsion_index, degree_delta=10.0):
     # header
     scan_job_lines = [
         "%mem=5GB",
-        "%nprocshared=24",
+        "%nprocshared=48",
         "#P m062x/cc-pVTZ",
         "Opt=(CalcFC,ModRedun)",
         "",

@@ -47,6 +47,13 @@ new_cf.update_coords_from(mol_type="ase")
 torsions = new_cf.get_torsions()
 n_rotors = len(torsions)
 
+if n_rotors == 0:
+    no_rotor_file = os.path.join(rotor_dir, 'NO_ROTORS.txt')
+    with open(no_rotor_file, 'w') as f:
+        f.write('NO ROTORS')
+    print("no rotors to calculate")
+    exit(0)
+
 print("generating gaussian input files")
 # gaussian = autotst.calculator.gaussian.Gaussian(conformer=new_cf)
 for i, torsion in enumerate(new_cf.torsions):

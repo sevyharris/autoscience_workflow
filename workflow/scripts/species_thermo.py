@@ -65,7 +65,6 @@ slurm_run_file = os.path.join(conformer_dir, 'run.sh')
 slurm_settings = {
     '--job-name': f'g16_cf_{species_index}',
     '--error': 'error.log',
-    '--output': 'output.log',
     '--nodes': 1,
     '--partition': 'west,short',
     '--exclude': 'c5003',

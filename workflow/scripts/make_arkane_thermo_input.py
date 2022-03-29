@@ -35,6 +35,8 @@ rotor_dir = os.path.join(species_base_dir, 'rotors')
 conformer_files = glob.glob(os.path.join(rotor_dir, 'conformer_*.log'))
 if len(conformer_files) > 1:
     print(f"Warning: more than one lowest energy conformer. Using {conformer_files[0]}")
+elif len(conformer_files) == 0:
+    print(f'Conformer files not found. Did you remember to run the rotors?')
 
 # copy to the arkane folder
 arkane_dir = os.path.join(species_base_dir, 'arkane')
@@ -121,9 +123,9 @@ def write_conformer_file(conformer, gauss_log, arkane_dir, include_rotors=True):
     output += [
         f"frequencies = Log('{gauss_log_relative}')", ""]
 
-    if include_rotors:
+    if include_rotors and n_rotors > 0:
         output += ["rotors = ["]
-        if len(conformer.torsions) ==0:
+        if len(conformer.torsions) == 0:
             conformer.get_molecules()
             conformer.get_geometries()
         for i, torsion in enumerate(conformer.torsions):

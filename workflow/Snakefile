@@ -38,8 +38,10 @@ rule get_ranked_species:
         "echo hello"
 
 
+run_species_thermo_script = os.path.abspath(os.path.join(workflow.basedir, 'scripts', 'run_species_thermo.sh'))
 rule species_thermo:
     # This should probably be renamed to something like calc_conformers
+    # TODO check whether the conformers have already run?
     conda:
         'envs/tst_env.yaml'
     shell:
@@ -47,7 +49,9 @@ rule species_thermo:
         bash -c '
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
-            sbatch scripts/run_species_thermo.sh {species_index}
+            mkdir -p {species_dir}
+            cd {species_dir}
+            sbatch {run_species_thermo_script} {species_index}
             conda deactivate'
         """
 
@@ -91,7 +95,7 @@ rule run_arkane_thermo:
         """
 
 
-rule reaction_kinetics:
+rule list_species_in_reaction:
     # determine which species calculations are needed to make the reaction calculation
     input:
         collect_species_script = os.path.join('scripts', 'kinetics', 'collect_species.py')

@@ -27,7 +27,7 @@ species_csv = '/work/westgroup/harris.se/autoscience/autoscience_workflow/resour
 species_df = pd.read_csv(species_csv)
 
 
-for i in range(0, len(species_df)):
+for i in range(4, len(species_df)):
 # for i in [13]:
     species_index = species_df.i.values[i]
     species_smiles = species_df.SMILES.values[i]
@@ -35,12 +35,11 @@ for i in range(0, len(species_df)):
     arkane_result = os.path.join(species_dir, 'arkane', 'RMG_libraries', 'thermo.py')
     if os.path.exists(arkane_result):
         with open(logfile, 'a') as f:
-            f.write(species_index, species_smiles, 'COMPLETE\n')
+            f.write(f'{species_index} {species_smiles} COMPLETE\n')
         print(species_index, species_smiles, 'COMPLETE')
     else:
         print(species_index, species_smiles, 'RUNNING THERMO')
         start = time.time()
-        end = time.time()
 
         # start a job that calls snakemake to run conformers
         os.chdir(workflow_dir)
@@ -53,9 +52,9 @@ for i in range(0, len(species_df)):
         print(proc)
 
 
-        # wait 10 minutes for the hotbit job to start/finish
+        # wait 5 minutes for the hotbit job to start/finish
         # try to read the slurm file in 
-        time.sleep(600)
+        time.sleep(300)
         g16_job_number = ''
         hotbit_slurm = glob.glob(os.path.join(species_dir, 'slurm-*'))
         if len(hotbit_slurm) == 0:
@@ -65,12 +64,12 @@ for i in range(0, len(species_df)):
         while not hotbit_complete:
             with open(hotbit_slurm[0], 'r') as f:
                 lines = f.readlines()
-                for line in line:
+                for line in lines:
                     if 'Submitted batch job' in line:
                         hotbit_complete = True
                         g16_job_number = line.split()[-1]
                         break
-            time.sleep(600)
+            time.sleep(300)
         print('Hotbit conformer screening complete')
         with open(logfile, 'a') as f:
             f.write('Hotbit conformer screening complete\n')
@@ -82,7 +81,7 @@ for i in range(0, len(species_df)):
         print(f'Waiting on job {gaussian_job}')
         with open(logfile, 'a') as f:
             f.write(f'Waiting on job {g16_job_number}' + '\n')
-        gaussian_job.wait_all(check_interval=3600)
+        gaussian_job.wait_all(check_interval=600)
         print('Gaussian jobs complete')
         with open(logfile, 'a') as f:
             f.write('Gaussian jobs complete\n')
@@ -95,8 +94,8 @@ for i in range(0, len(species_df)):
         proc = subprocess.Popen(cmd_pieces, stdin=None, stdout=None, stderr=None, close_fds=True)
         print(proc)
 
-        # wait 10 minutes for the rotor gaussian job to begin
-        time.sleep(600)
+        # wait 5 minutes for the rotor gaussian job to begin
+        time.sleep(300)
         g16_job_number = ''
         
         skip_rotors = False
@@ -116,7 +115,7 @@ for i in range(0, len(species_df)):
             print(f'Waiting on job {rotor_slurm_id}')
             with open(logfile, 'a') as f:
                 f.write(f'Waiting on job {rotor_slurm_id}' + '\n')
-            rotor_job.wait_all(check_interval=3600)
+            rotor_job.wait_all(check_interval=600)
             print('Rotor jobs complete')
             with open(logfile, 'a') as f:
                 f.write('Rotor jobs complete\n')
@@ -137,11 +136,12 @@ for i in range(0, len(species_df)):
         with open(logfile, 'a') as f:
             f.write('Waiting for arkane job\n')
         while not os.path.exists(arkane_result):
-            time.sleep(600)
+            time.sleep(300)
         print('Arkane complete')
         with open(logfile, 'a') as f:
             f.write('Arkane complete\n')
 
+        end = time.time()
         duration = end - start
         print(f'COMPLETED IN {duration} SECONDS')
         with open(logfile, 'a') as f:

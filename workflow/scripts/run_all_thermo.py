@@ -10,7 +10,14 @@ import subprocess
 import job_manager
 
 
+reverse = False
+if len(sys.argv) > 1:
+    if sys.argv[1].lower() == 'reverse':
+        reverse = True
+
 logfile = 'ghost.log'
+if reverse:
+    logfile = 'reverse_ghost.log'
 # read in the species csv
 with open(logfile, 'a') as f:
     f.write('Collecting Remaining Species\n')
@@ -26,10 +33,16 @@ workflow_dir = '/work/westgroup/harris.se/autoscience/autoscience_workflow/workf
 species_csv = '/work/westgroup/harris.se/autoscience/autoscience_workflow/resources/species_list.csv'
 species_df = pd.read_csv(species_csv)
 
-
-for i in range(4, len(species_df)):
-# for i in [13]:
+skip_indices = [0, 1, 2, 3, 4, 9, 10, 42, 45, 46, 47, 177, 178, 179, 181, 182, 184, 185]
+for i in range(0, len(species_df)):
     species_index = species_df.i.values[i]
+    if reverse:
+        species_index = species_df.i.values[len(species_df) - i - 1]
+    if species_index in skip_indices:
+        with open(logfile, 'a') as f:
+            f.write(f'Skipping {species_index}\n')
+        print(f'Skipping {species_index}\n')
+        continue
     species_smiles = species_df.SMILES.values[i]
     species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}')
     arkane_result = os.path.join(species_dir, 'arkane', 'RMG_libraries', 'thermo.py')
@@ -143,6 +156,6 @@ for i in range(4, len(species_df)):
 
         end = time.time()
         duration = end - start
-        print(f'COMPLETED IN {duration} SECONDS')
+        print(f'COMPLETED {species_smiles} IN {duration} SECONDS')
         with open(logfile, 'a') as f:
-            f.write(f'COMPLETED IN {duration} SECONDS' + '\n')
+            f.write(f'COMPLETED {species_smiles} IN {duration} SECONDS' + '\n')

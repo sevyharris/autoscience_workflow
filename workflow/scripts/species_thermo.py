@@ -56,6 +56,7 @@ for i, cf in enumerate(spec.conformers[species_smiles]):
     calc.parameters.pop('scratch')
     calc.parameters.pop('multiplicity')
     calc.parameters['mult'] = cf.rmg_molecule.multiplicity
+    calc.chk = f'conformer_{i:04}.chk'
     calc.write_input(cf.ase_molecule)
 
 
@@ -71,7 +72,8 @@ slurm_settings = {
     '--mem': '20Gb',
     '--time': '24:00:00',
     '--cpus-per-task': 16,
-    '--array': f'0-{n_conformers - 1}%40',
+    '--array': f'0-{n_conformers - 1}%20',
+#    '--array': f'0-{n_conformers - 1}%40',
 }
 
 slurm_file_writer = job_manager.SlurmJobFile(
@@ -99,4 +101,3 @@ gaussian_conformers_job = job_manager.SlurmJob()
 slurm_cmd = f"sbatch {slurm_run_file}"
 gaussian_conformers_job.submit(slurm_cmd)
 os.chdir(start_dir)
-

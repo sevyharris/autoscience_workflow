@@ -29,13 +29,31 @@ rule run_rmg:
     shell:
         "echo hello"
 
-rule get_ranked_reactions:
+rank_reactions_script = os.path.abspath(os.path.join(workflow.basedir, 'scripts', 'rank_reactions.sh'))
+rule rank_reactions:
+    """
+    This rule needs the Sevy/RMG-Py:extract_sources_from_model?? branch of RMG
+    Also, you need to make sure the included databases match
+    """
     shell:
-        "echo hello"
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /home/harris.se/anaconda3/envs/rmg_env/
+            sbatch {rank_reactions_script}
+            conda deactivate'
+        """
 
-rule get_ranked_species:
+rank_species_script = os.path.abspath(os.path.join(workflow.basedir, 'scripts', 'rank_species.sh'))
+rule rank_species:
     shell:
-        "echo hello"
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /home/harris.se/anaconda3/envs/rmg_env/
+            sbatch {rank_species_script}
+            conda deactivate'
+        """
 
 
 run_species_thermo_script = os.path.abspath(os.path.join(workflow.basedir, 'scripts', 'run_species_thermo.sh'))

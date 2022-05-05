@@ -17,6 +17,14 @@ except KeyError:
     DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft'
 
 
+def get_num_species():
+    """Function to lookup number of species in the species_list.csv
+    """
+    species_csv = os.path.join(DFT_DIR, '..', '..', 'resources', 'species_list.csv')
+    species_df = pd.read_csv(species_csv)
+    return species_df.i.values[-1]
+
+
 def index2smiles(species_index):
     """Function to return species smiles given a species index
     looks up the results in the species_list.csv
@@ -57,13 +65,10 @@ def normal_or_error_termination(log_file):
             last_line = f.readline().decode()
             f.seek(saved_position, os.SEEK_SET)
             if 'Normal termination' in last_line:
-                normal_termination = True
-                break
+                return True
             elif 'Error termination' in last_line:
-                error_termination = True
-                break
-        if not normal_termination and not error_termination:
-            incomplete_cfs.append(cf_index)
+                return True
+        return False
 
 
 def incomplete_conformers(species_index):
@@ -90,7 +95,8 @@ def incomplete_conformers(species_index):
         if not os.path.exists(conformer_file):
             incomplete_cfs.append(cf_index)
             continue
-        if normal_or_error_termination(conformer_file)
+        if normal_or_error_termination(conformer_file):
+            incomplete_cfs.append(cf_index)
     return incomplete_cfs
 
 
@@ -118,7 +124,8 @@ def incomplete_rotors(species_index):
         if not os.path.exists(rotor_file):
             incomplete_rs.append(r_index)
             continue
-        if normal_or_error_termination(rotor_file)
+        if normal_or_error_termination(rotor_file):
+            incomplete_rs.append(r_index)
     return incomplete_rs
 
 

@@ -18,9 +18,7 @@ reaction_index = int(sys.argv[1])
 print(f'Preparing reaction {reaction_index}')
 
 # Load the species from the official species list
-
 scripts_dir = os.path.dirname(os.path.dirname(__file__))
-print(scripts_dir)
 reaction_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'reaction_list.csv')
 reaction_df = pd.read_csv(reaction_csv)
 species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
@@ -42,7 +40,7 @@ for spec in species_list:
     
     print(row.i.values[0], row.SMILES.values[0])
     species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{row.i.values[0]:04}')
-    if not os.path.exists(os.path.join(species_dir, 'arkane')):
+    if not os.path.exists(os.path.join(species_dir, 'arkane', 'RMG_libraries')):
         incomplete_species.append([row.i.values[0], row.SMILES.values[0]])
 
 print('Missing Species:')

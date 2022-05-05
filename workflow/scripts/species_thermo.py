@@ -15,6 +15,7 @@ from hotbit import Hotbit
 
 import autotst.species
 from autotst.calculator.gaussian import Gaussian
+import ase.calculators.lj
 
 import job_manager
 
@@ -39,10 +40,16 @@ os.makedirs(species_base_dir, exist_ok=True)
 
 
 # generate conformers
-spec.generate_conformers(ase_calculator=Hotbit())
-n_conformers = len(spec.conformers[species_smiles])
-print(f'{n_conformers} found with Hotbit')
-
+try:
+    spec.generate_conformers(ase_calculator=Hotbit())
+    n_conformers = len(spec.conformers[species_smiles])
+    print(f'{n_conformers} found with Hotbit')
+except RuntimeError:
+    # if hotbit fails, use built-in lennard jones
+    print('Using built-in ase LennardJones calculator instead of Hotbit')
+    spec.generate_conformers(ase_calculator=ase.calculators.lj.LennardJones())
+    n_conformers = len(spec.conformers[species_smiles])
+    print(f'{n_conformers} found with ase LennardJones calculator')
 
 # do detailed calculation using Gaussian
 conformer_dir = os.path.join(species_base_dir, 'conformers')

@@ -79,8 +79,7 @@ slurm_settings = {
     '--mem': '20Gb',
     '--time': '24:00:00',
     '--cpus-per-task': 16,
-    '--array': f'0-{n_conformers - 1}%20',
-#    '--array': f'0-{n_conformers - 1}%40',
+    '--array': f'0-{n_conformers - 1}%30',
 }
 
 slurm_file_writer = job_manager.SlurmJobFile(

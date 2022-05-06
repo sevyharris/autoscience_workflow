@@ -9,6 +9,7 @@ import datetime
 import time
 import subprocess
 import job_manager
+import re
 
 
 try:
@@ -46,9 +47,11 @@ def arkane_complete(species_index):
     return os.path.exists(arkane_result)
 
 
-def normal_or_error_termination(log_file):
-    """Returns true if the Gaussian log_file contains the strings:
-    "Normal termination" or "Error termination" in the last 5 lines
+def termination_status(log_file):
+    """Returns:
+    0 for Normal termination
+    1 for Error termination
+    -1 for no termination
     """
     with open(log_file, 'rb') as f:
         f.seek(0, os.SEEK_END)
@@ -65,10 +68,22 @@ def normal_or_error_termination(log_file):
             last_line = f.readline().decode()
             f.seek(saved_position, os.SEEK_SET)
             if 'Normal termination' in last_line:
-                return True
+                return 0
             elif 'Error termination' in last_line:
-                return True
-        return False
+                return 1
+        return -1
+
+
+def get_n_runs(slurm_array_file):
+    """Reads the run.sh file to figure out how many conformers or rotors were meant to run
+    """
+    with open(slurm_array_file, 'r') as f:
+        for line in f:
+            if 'SBATCH --array=' in line:
+                token = line.split('-')[-1]
+                n_runs = 1 + int(token.split('%')[0])
+                return n_runs
+    return 0
 
 
 def incomplete_conformers(species_index):
@@ -82,12 +97,7 @@ def incomplete_conformers(species_index):
     slurm_array_file = os.path.join(conformer_dir, 'run.sh')
     if not os.path.exists(slurm_array_file):
         return True  # no conformers run yet
-    with open(slurm_array_file, 'r') as f:
-        for line in f:
-            if 'SBATCH --array=' in line:
-                token = line.split('-')[-1]
-                n_conformers = 1 + int(token.split('%')[0])
-                break
+    n_conformers = get_n_runs(slurm_array_file)
 
     incomplete_cfs = []
     for cf_index in range(0, n_conformers):
@@ -95,7 +105,8 @@ def incomplete_conformers(species_index):
         if not os.path.exists(conformer_file):
             incomplete_cfs.append(cf_index)
             continue
-        if not normal_or_error_termination(conformer_file):
+        status = termination_status(conformer_file)
+        if status == -1:
             incomplete_cfs.append(cf_index)
     return incomplete_cfs
 
@@ -111,12 +122,7 @@ def incomplete_rotors(species_index):
     slurm_array_file = os.path.join(rotor_dir, 'run.sh')
     if not os.path.exists(slurm_array_file):
         return True  # no rotors run yet
-    with open(slurm_array_file, 'r') as f:
-        for line in f:
-            if 'SBATCH --array=' in line:
-                token = line.split('-')[-1]
-                n_rotors = 1 + int(token.split('%')[0])
-                break
+    n_rotors = get_n_runs(slurm_array_file)
 
     incomplete_rs = []
     for r_index in range(0, n_rotors):
@@ -124,7 +130,8 @@ def incomplete_rotors(species_index):
         if not os.path.exists(rotor_file):
             incomplete_rs.append(r_index)
             continue
-        if not normal_or_error_termination(rotor_file):
+        status = termination_status(rotor_file)
+        if status == -1:
             incomplete_rs.append(r_index)
     return incomplete_rs
 
@@ -332,6 +339,39 @@ def run_conformers_job(species_index):
         f.write(f'Gaussian conformer jobs completed in {duration} seconds' + '\n')
 
     return True
+
+
+def read_gaussian_energy(logfile):
+    with open(logfile, 'r') as f:
+        for line in f:
+            if 'Sum of electronic and zero-point Energies= ' in line:
+                energy = float(line.split()[-1])
+                return energy
+    return 0
+
+
+def get_lowest_conformer(species_index):
+    """Returns the filepath of the lowest energy conformer logfile
+    """
+    conformer_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}', 'conformers')
+    slurm_array_file = os.path.join(conformer_dir, 'run.sh')
+    if not os.path.exists(slurm_array_file):
+        return None  # no conformers run yet
+    n_conformers = get_n_runs(slurm_array_file)
+    lowest_energy = 999999
+    best_conformer_file = None
+    for cf_index in range(0, n_conformers):
+        conformer_file = os.path.join(conformer_dir, f'conformer_{cf_index:04}.log')
+        status = termination_status(conformer_file)
+        if status != 0:
+            continue
+        energy = read_gaussian_energy(conformer_file)
+        print(cf_index, energy)
+        if energy < lowest_energy:
+            lowest_energy = energy
+            best_conformer_file = conformer_file
+
+    return best_conformer_file
 
 
 def run_rotors_job(species_index):

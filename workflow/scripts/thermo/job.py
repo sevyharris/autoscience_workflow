@@ -95,7 +95,7 @@ def incomplete_conformers(species_index):
         if not os.path.exists(conformer_file):
             incomplete_cfs.append(cf_index)
             continue
-        if normal_or_error_termination(conformer_file):
+        if not normal_or_error_termination(conformer_file):
             incomplete_cfs.append(cf_index)
     return incomplete_cfs
 
@@ -124,7 +124,7 @@ def incomplete_rotors(species_index):
         if not os.path.exists(rotor_file):
             incomplete_rs.append(r_index)
             continue
-        if normal_or_error_termination(rotor_file):
+        if not normal_or_error_termination(rotor_file):
             incomplete_rs.append(r_index)
     return incomplete_rs
 

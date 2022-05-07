@@ -1,6 +1,4 @@
 # Functions for running a thermo job using this workflow
-
-
 import pandas as pd
 import os
 import sys
@@ -9,7 +7,6 @@ import datetime
 import time
 import subprocess
 import job_manager
-import re
 
 
 try:

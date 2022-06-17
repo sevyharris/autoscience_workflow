@@ -2,6 +2,7 @@
 import os
 import sys
 import job
+import shutil
 
 
 species_index = int(sys.argv[1])

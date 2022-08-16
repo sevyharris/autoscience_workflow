@@ -3,8 +3,8 @@
 #SBATCH --error=kinetics_error.log
 #SBATCH --mincpus=1
 #SBATCH --exclude=c5003
-#SBATCH --partition=west
-#SBATCH --time=7-00:00:00
+#SBATCH --partition=west,short
+#SBATCH --time=1-00:00:00
 
 
 cd "/work/westgroup/harris.se/autoscience/autoscience_workflow/workflow/"

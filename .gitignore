@@ -2,4 +2,6 @@
 .snakemake/
 .ipynb_checkpoints
 
+__pycache__
+
 slurm-*.out

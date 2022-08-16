@@ -13,15 +13,16 @@ import pandas as pd
 try:
     DFT_DIR = os.environ['DFT_DIR']
 except KeyError:
-    DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft"
+    # DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft"
+    DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience/butane/dft"
 reaction_index = int(sys.argv[1])
 print(f'Preparing reaction {reaction_index}')
 
 # Load the species from the official species list
 scripts_dir = os.path.dirname(os.path.dirname(__file__))
-reaction_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'reaction_list.csv')
+reaction_csv = os.path.join(DFT_DIR, 'reaction_list.csv')
 reaction_df = pd.read_csv(reaction_csv)
-species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
+species_csv = os.path.join(DFT_DIR, 'species_list.csv')
 species_df = pd.read_csv(species_csv)
 
 reaction_smiles = reaction_df.SMILES[reaction_index]
@@ -37,7 +38,7 @@ print("Required Species:")
 for spec in species_list:
     spec_index = species_df.index[species_df['SMILES'] == spec]
     row = species_df.loc[spec_index]
-    
+
     print(row.i.values[0], row.SMILES.values[0])
     species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{row.i.values[0]:04}')
     if not os.path.exists(os.path.join(species_dir, 'arkane', 'RMG_libraries')):

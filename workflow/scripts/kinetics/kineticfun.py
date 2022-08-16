@@ -11,22 +11,23 @@ import ase.io.gaussian
 try:
     DFT_DIR = os.environ['DFT_DIR']
 except KeyError:
-    DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft'
+    # DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft'
+    DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience/butane/dft"
 
 
 def get_num_reactions():
     """Function to lookup number of reactions in the reaction_list.csv
     """
-    reaction_csv = os.path.join(DFT_DIR, '..', '..', 'resources', 'reaction_list.csv')
+    reaction_csv = os.path.join(DFT_DIR, 'reaction_list.csv')
     reaction_df = pd.read_csv(reaction_csv)
     return reaction_df.i.values[-1]
 
 
 def reaction_index2smiles(reaction_index):
-    """Function to return reactuib smiles given a reactuib index
-    looks up the results in the reactuib_list.csv
+    """Function to return reaction smiles given a reaction index
+    looks up the results in the reaction_list.csv
     """
-    reaction_csv = os.path.join(DFT_DIR, '..', '..', 'resources', 'reaction_list.csv')
+    reaction_csv = os.path.join(DFT_DIR, 'reaction_list.csv')
     reaction_df = pd.read_csv(reaction_csv)
     reaction_smiles = reaction_df.SMILES.values[reaction_index]
     return reaction_smiles

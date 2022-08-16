@@ -12,13 +12,14 @@ import job_manager
 try:
     DFT_DIR = os.environ['DFT_DIR']
 except KeyError:
-    DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft'
+    # DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience_workflow/results/dft'
+    DFT_DIR = '/work/westgroup/harris.se/autoscience/autoscience/butane/dft'
 
 
 def get_num_species():
     """Function to lookup number of species in the species_list.csv
     """
-    species_csv = os.path.join(DFT_DIR, '..', '..', 'resources', 'species_list.csv')
+    species_csv = os.path.join(DFT_DIR, 'species_list.csv')
     species_df = pd.read_csv(species_csv)
     return species_df.i.values[-1]
 
@@ -27,7 +28,7 @@ def index2smiles(species_index):
     """Function to return species smiles given a species index
     looks up the results in the species_list.csv
     """
-    species_csv = os.path.join(DFT_DIR, '..', '..', 'resources', 'species_list.csv')
+    species_csv = os.path.join(DFT_DIR, 'species_list.csv')
     species_df = pd.read_csv(species_csv)
     species_smiles = species_df.SMILES.values[species_index]
     return species_smiles
@@ -278,7 +279,8 @@ def run_conformers_job(species_index):
             f.write('Conformers already ran\n')
         return True
 
-    workflow_dir = os.path.join(DFT_DIR, '..', '..', 'workflow')
+    # TODO make this path relative to the job.py script
+    workflow_dir = "/work/westgroup/harris.se/autoscience/autoscience_workflow/workflow"
 
     # start a job that calls snakemake to run conformers
     os.chdir(workflow_dir)
@@ -440,7 +442,9 @@ def run_rotors_job(species_index):
 def run_arkane_job(species_index):
     # start a job that calls snakemake to run arkane
     species_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}')
-    arkane_result = os.path.join(species_dir, 'arkane', 'RMG_libraries', 'thermo.py')
+    arkane_dir = os.path.join(species_dir, 'arkane')
+    os.makedirs(arkane_dir, exist_ok=True)
+    arkane_result = os.path.join(arkane_dir, 'RMG_libraries', 'thermo.py')
     if arkane_complete(species_index):
         print('Arkane job already ran')
         return True
@@ -454,6 +458,7 @@ def run_arkane_job(species_index):
     # wait 10 minutes for Arkane start/finish
     # try to read the slurm file in
     print('Waiting for arkane job')
+    logfile = os.path.join(arkane_dir, 'snakemake_arkane.log')
     with open(logfile, 'a') as f:
         f.write('Waiting for arkane job\n')
     while not os.path.exists(arkane_result):

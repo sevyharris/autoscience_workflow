@@ -2,7 +2,8 @@
 import os
 
 
-DFT_DIR = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
+# DFT_DIR = os.path.abspath(os.path.join(workflow.basedir, '..', 'results', 'dft'))
+DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience/butane/dft"
 os.environ['DFT_DIR'] = DFT_DIR
 try:
     species_index = config['species_index']
@@ -60,8 +61,8 @@ run_species_thermo_script = os.path.abspath(os.path.join(workflow.basedir, 'scri
 rule species_thermo:
     # This should probably be renamed to something like calc_conformers
     # TODO check whether the conformers have already run?
-    conda:
-        'envs/tst_env.yaml'
+    # conda:
+    #     'envs/tst_env.yaml'
     shell:
         """
         bash -c '
@@ -98,7 +99,7 @@ rule setup_arkane_thermo:
             conda deactivate'
         """
 
-
+# conda activate /home/harris.se/anaconda3/envs/rmg_env/
 rule run_arkane_thermo:
     input:
         run_arkane_script = os.path.join(arkane_dir, 'run_arkane.sh')
@@ -106,7 +107,7 @@ rule run_arkane_thermo:
         """
         bash -c '
             . $HOME/.bashrc
-            conda activate /home/harris.se/anaconda3/envs/rmg_env/
+            conda activate /work/westgroup/harris.se/tst_env
             cd {arkane_dir}
             sbatch {input.run_arkane_script}
             conda deactivate'
@@ -127,19 +128,22 @@ rule list_species_in_reaction:
         """
 
 
-
 rule species_list:
-    conda:
-        'envs/tst_env.yaml'
     shell:
         """
-        python scripts/generate_species_list.py
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/generate_species_list.py
+            conda deactivate'
         """
 
 rule reaction_list:
-    conda:
-        'envs/tst_env.yaml'
     shell:
         """
-        python scripts/generate_reaction_list.py
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/generate_reaction_list.py
+            conda deactivate'
         """

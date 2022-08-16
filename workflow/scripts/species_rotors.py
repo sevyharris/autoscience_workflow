@@ -20,7 +20,8 @@ print(f'Species index is {species_index}')
 
 # Load the species from the official species list
 scripts_dir = os.path.dirname(__file__)
-species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
+# species_csv = os.path.join(scripts_dir, '..', '..', 'resources', 'species_list.csv')
+species_csv = os.path.join(DFT_DIR, 'species_list.csv')
 species_df = pd.read_csv(species_csv)
 species_smiles = species_df.SMILES[species_index]
 

@@ -117,7 +117,7 @@ def incomplete_rotors(species_index):
     rotor_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}', 'rotors')
 
     # Get #rotors from the array job script
-    slurm_array_file = os.path.join(rotor_dir, 'run.sh')
+    slurm_array_file = os.path.join(rotor_dir, 'run_rotor_calcs.sh')
     if not os.path.exists(slurm_array_file):
         return True  # no rotors run yet
     n_rotors = get_n_runs(slurm_array_file)
@@ -419,7 +419,7 @@ def run_rotors_job(species_index):
     print(f'Waiting on job {rotor_slurm_id}')
     with open(logfile, 'a') as f:
         f.write(f'Waiting on job {rotor_slurm_id}' + '\n')
-    rotor_job.wait_all(check_interval=600)
+    rotor_job.wait_all(check_interval=30)
 
     # rerun any rotor jobs that failed to converge in time:
     if not rotors_complete(species_index):
@@ -462,7 +462,7 @@ def run_arkane_job(species_index):
     with open(logfile, 'a') as f:
         f.write('Waiting for arkane job\n')
     while not os.path.exists(arkane_result):
-        time.sleep(300)
+        time.sleep(30)
 
         # TODO, give up if it has started running but hasn't completed in twenty minutes
     print('Arkane complete')

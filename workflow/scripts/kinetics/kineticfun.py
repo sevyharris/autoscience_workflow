@@ -1,6 +1,8 @@
 # Functions for running a kinetics job using this workflow
 import pandas as pd
+import re
 import os
+import glob
 import autotst.reaction
 import autotst.calculator.gaussian
 import job_manager
@@ -75,7 +77,8 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     os.makedirs(shell_dir, exist_ok=True)
     logfile = os.path.join(shell_dir, 'shell.log')
 
-    # Check for already finished shell logfile
+    # Check for already finished shell logfiles
+    # first, return if all of them have finished
     shell_label = 'fwd_ts_0000.log'
     direction = 'forward'
     if use_reverse:
@@ -83,13 +86,21 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
         direction = 'reverse'
     shell_opt_log = os.path.join(shell_dir, shell_label)
 
-    if os.path.exists(shell_opt_log):
-        status = termination_status(shell_opt_log)
-        if status == 0 or status == 1:
-            print('Shell optimization already ran')
-            with open(logfile, 'a') as f:
-                f.write('Shell optimization already ran\n')
-            return True
+    shell_gaussian_logs = glob.glob(os.path.join(shell_dir, shell_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for shell_opt_log in shell_gaussian_logs:
+        if os.path.exists(shell_opt_log):
+            status = termination_status(shell_opt_log)
+            if status == 0 or status == 1:
+                print('Shell optimization already ran')
+                with open(logfile, 'a') as f:
+                    f.write('Shell optimization already ran\n')
+            else:
+                matches = re.search(shell_label[:-8] + '([0-9]{4})', shell_opt_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+    if not incomplete_indices and len(shell_gaussian_logs) > 0:
+        return True  # only if all of them ran
 
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
@@ -99,11 +110,16 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     # Do the shell calculations
     # write Gaussian input files
     for i in range(0, len(reaction.ts[direction])):
+        if i not in incomplete_indices:
+            print(f'Skipping completed index {i}')
+            continue
+
+        shell_label = shell_label[:-4] + f'_{i:04}.log'
 
         ts = reaction.ts[direction][i]
         gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
         calc = gaussian.get_shell_calc()
-        calc.label = shell_label[:-4] + f'_{i:04}'
+        calc.label = shell_label[:-4]
         calc.directory = shell_dir
         calc.parameters.pop('scratch')
         calc.parameters.pop('multiplicity')
@@ -146,7 +162,7 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
             'module load gaussian/g16\n',
             'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
-            f'g16 {shell_label[:-4]}_{i:04}.com' + '\n',
+            f'g16 {shell_label[:-4]}.com' + '\n',
         ]
         slurm_file_writer.write_file()
 
@@ -182,88 +198,100 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     overall_ts_log = os.path.join(overall_dir, overall_label)
 
     # check that the overall job hasn't finished
-    if os.path.exists(overall_ts_log):
-        status = termination_status(overall_ts_log)
-        if status == 0:
-            print('Overall TS optimization already ran')
-            with open(logfile, 'a') as f:
-                f.write('Overall TS optimization already ran\n')
-            return True
+    overall_gaussian_logs = glob.glob(os.path.join(overall_dir, overall_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for overall_ts_log in overall_gaussian_logs:
+        if os.path.exists(overall_ts_log):
+            status = termination_status(overall_ts_log)
+            if status == 0:
+                print('Overall TS optimization already ran')
+                with open(logfile, 'a') as f:
+                    f.write('Overall TS optimization already ran\n')
+            else:
+                matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+    if not incomplete_indices and len(overall_gaussian_logs) > 0:
+        return True
 
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
     reaction.generate_conformers(ase_calculator=Hotbit())
+    # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
 
-    if len(reaction.ts[direction]) > 1:
-        raise ValueError(f'multiple {direction} ts')
+    for i in range(0, len(reaction.ts[direction])):
+        if i not in incomplete_indices:
+            print(f'Skipping completed index {i}')
+            continue
 
-    shell_opt = os.path.join(shell_dir, overall_label)
-    try:
-        with open(shell_opt, 'r') as f:
-            atoms = ase.io.gaussian.read_gaussian_out(f)
-            reaction.ts[direction][0]._ase_molecule = atoms
-    except IndexError:
-        # handle case where all degrees of freedom were frozen in the shell calculation
-        if len(reaction.ts[direction][0]._ase_molecule) > 3:
-            raise ValueError('Shell optimization failed to converge. Rerun it!')
+        overall_label = overall_label[:-8] + f'_{i:04}.log'
+        shell_opt = os.path.join(shell_dir, overall_label)
+        try:
+            with open(shell_opt, 'r') as f:
+                atoms = ase.io.gaussian.read_gaussian_out(f)
+                reaction.ts[direction][i]._ase_molecule = atoms
+        except IndexError:
+            # handle case where all degrees of freedom were frozen in the shell calculation
+            if len(reaction.ts[direction][i]._ase_molecule) > 3:
+                raise ValueError('Shell optimization failed to converge. Rerun it!')
 
-    for i, ts in enumerate(reaction.ts[direction]):
-        gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
-        calc = gaussian.get_overall_calc()
-        calc.label = overall_label[:-4]
-        calc.directory = overall_dir
-        calc.parameters.pop('scratch')
-        calc.parameters.pop('multiplicity')
-        calc.parameters['mult'] = ts.rmg_molecule.multiplicity
-        calc.write_input(ts.ase_molecule)
+        for j, ts in enumerate(reaction.ts[direction]):
+            gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
+            calc = gaussian.get_overall_calc()
+            calc.label = overall_label[:-4]
+            calc.directory = overall_dir
+            calc.parameters.pop('scratch')
+            calc.parameters.pop('multiplicity')
+            calc.parameters['mult'] = ts.rmg_molecule.multiplicity
+            calc.write_input(ts.ase_molecule)
 
-        # Get rid of double-space between xyz block and mod-redundant section
-        double_space = False
-        lines = []
-        with open(os.path.join(overall_dir, calc.label + '.com'), 'r') as f:
-            lines = f.readlines()
-            for j in range(1, len(lines)):
-                if lines[j] == '\n' and lines[j - 1] == '\n':
-                    double_space = True
-                    break
-        if double_space:
-            lines = lines[0:j - 1] + lines[j:]
-            with open(os.path.join(overall_dir, calc.label + '.com'), 'w') as f:
-                f.writelines(lines)
+            # Get rid of double-space between xyz block and mod-redundant section
+            double_space = False
+            lines = []
+            with open(os.path.join(overall_dir, calc.label + '.com'), 'r') as f:
+                lines = f.readlines()
+                for j in range(1, len(lines)):
+                    if lines[j] == '\n' and lines[j - 1] == '\n':
+                        double_space = True
+                        break
+            if double_space:
+                lines = lines[0:j - 1] + lines[j:]
+                with open(os.path.join(overall_dir, calc.label + '.com'), 'w') as f:
+                    f.writelines(lines)
 
-        # make the overall slurm script
-        slurm_run_file = os.path.join(overall_dir, 'run.sh')
-        slurm_settings = {
-            '--job-name': f'g16_overall_{reaction_index}',
-            '--error': 'error.log',
-            '--output': 'output.log',
-            '--nodes': 1,
-            '--partition': 'west,short',
-            '--exclude': 'c5003',
-            '--mem': '20Gb',
-            '--time': '24:00:00',
-            '--cpus-per-task': 16,
-            # TODO make this an array if multiple forward ts's
-        }
+            # make the overall slurm script
+            slurm_run_file = os.path.join(overall_dir, f'run_{i:04}.sh')
+            slurm_settings = {
+                '--job-name': f'g16_overall_{reaction_index}',
+                '--error': 'error.log',
+                '--output': 'output.log',
+                '--nodes': 1,
+                '--partition': 'west,short',
+                '--exclude': 'c5003',
+                '--mem': '20Gb',
+                '--time': '24:00:00',
+                '--cpus-per-task': 16,
+                # TODO make this an array if multiple forward ts's
+            }
 
-        slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
-        slurm_file_writer.settings = slurm_settings
-        slurm_file_writer.content = [
-            'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
-            'mkdir -p $GAUSS_SCRDIR\n',
-            'module load gaussian/g16\n',
-            'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+            slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+            slurm_file_writer.settings = slurm_settings
+            slurm_file_writer.content = [
+                'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+                'mkdir -p $GAUSS_SCRDIR\n',
+                'module load gaussian/g16\n',
+                'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
-            f'g16 {overall_label[:-4]}.com' + '\n',
-        ]
-        slurm_file_writer.write_file()
+                f'g16 {overall_label[:-4]}.com' + '\n',
+            ]
+            slurm_file_writer.write_file()
 
-        # submit the job
-        start_dir = os.getcwd()
-        os.chdir(overall_dir)
-        overall_job = job_manager.SlurmJob()
-        slurm_cmd = f"sbatch {slurm_run_file}"
-        overall_job.submit(slurm_cmd)
-        os.chdir(start_dir)
-        overall_job.wait(check_interval=600)
+            # submit the job
+            start_dir = os.getcwd()
+            os.chdir(overall_dir)
+            overall_job = job_manager.SlurmJob()
+            slurm_cmd = f"sbatch {slurm_run_file}"
+            overall_job.submit(slurm_cmd)
+            os.chdir(start_dir)
+            overall_job.wait(check_interval=600)

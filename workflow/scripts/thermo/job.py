@@ -386,15 +386,15 @@ def run_rotors_job(species_index):
         f.write(f'Starting rotors job: {timestamp}' + '\n')
 
     # check if a rotor job was already completed
-    if rotors_complete(species_index):
-        print('Rotors already ran')
-        with open(logfile, 'a') as f:
-            f.write('Rotors already ran\n')
-        return True
-    elif os.path.exists(os.path.join(rotor_dir, 'NO_ROTORS.txt')):
+    if os.path.exists(os.path.join(rotor_dir, 'NO_ROTORS.txt')):
         print('No rotors to run')
         with open(logfile, 'a') as f:
             f.write('No rotors to run\n')
+        return True
+    elif rotors_complete(species_index):
+        print('Rotors already ran')
+        with open(logfile, 'a') as f:
+            f.write('Rotors already ran\n')
         return True
 
     rotor_cmd = f'snakemake -c1 run_rotors --config species_index={species_index}'

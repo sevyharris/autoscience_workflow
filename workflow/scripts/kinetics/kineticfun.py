@@ -110,11 +110,11 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     # Do the shell calculations
     # write Gaussian input files
     for i in range(0, len(reaction.ts[direction])):
-        if i not in incomplete_indices:
+        if i not in incomplete_indices and len(shell_gaussian_logs) > 0:
             print(f'Skipping completed index {i}')
             continue
 
-        shell_label = shell_label[:-4] + f'_{i:04}.log'
+        shell_label = shell_label[:-8] + f'{i:04}.log'
 
         ts = reaction.ts[direction][i]
         gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
@@ -174,10 +174,10 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
         shell_job = job_manager.SlurmJob()
         slurm_cmd = f"sbatch {slurm_run_file}"
         shell_job.submit(slurm_cmd)
-        os.chdir(start_dir)
-        shell_job.wait(check_interval=600)
 
-        # TODO restart optimization if it fails. for now, move on
+    # only wait after all jobs have been submitted
+    os.chdir(start_dir)
+    shell_job.wait(check_interval=60)
 
 
 def run_TS_overall_calc(reaction_index, use_reverse=False):
@@ -221,11 +221,11 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
 
     for i in range(0, len(reaction.ts[direction])):
-        if i not in incomplete_indices:
+        if i not in incomplete_indices and len(overall_gaussian_logs) > 0:
             print(f'Skipping completed index {i}')
             continue
 
-        overall_label = overall_label[:-8] + f'_{i:04}.log'
+        overall_label = overall_label[:-8] + f'{i:04}.log'
         shell_opt = os.path.join(shell_dir, overall_label)
         try:
             with open(shell_opt, 'r') as f:
@@ -236,62 +236,64 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
             if len(reaction.ts[direction][i]._ase_molecule) > 3:
                 raise ValueError('Shell optimization failed to converge. Rerun it!')
 
-        for j, ts in enumerate(reaction.ts[direction]):
-            gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
-            calc = gaussian.get_overall_calc()
-            calc.label = overall_label[:-4]
-            calc.directory = overall_dir
-            calc.parameters.pop('scratch')
-            calc.parameters.pop('multiplicity')
-            calc.parameters['mult'] = ts.rmg_molecule.multiplicity
-            calc.write_input(ts.ase_molecule)
+        ts = reaction.ts[direction][i]
+        gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
+        calc = gaussian.get_overall_calc()
+        calc.label = overall_label[:-4]
+        calc.directory = overall_dir
+        calc.parameters.pop('scratch')
+        calc.parameters.pop('multiplicity')
+        calc.parameters['mult'] = ts.rmg_molecule.multiplicity
+        calc.write_input(ts.ase_molecule)
 
-            # Get rid of double-space between xyz block and mod-redundant section
-            double_space = False
-            lines = []
-            with open(os.path.join(overall_dir, calc.label + '.com'), 'r') as f:
-                lines = f.readlines()
-                for j in range(1, len(lines)):
-                    if lines[j] == '\n' and lines[j - 1] == '\n':
-                        double_space = True
-                        break
-            if double_space:
-                lines = lines[0:j - 1] + lines[j:]
-                with open(os.path.join(overall_dir, calc.label + '.com'), 'w') as f:
-                    f.writelines(lines)
+        # Get rid of double-space between xyz block and mod-redundant section
+        double_space = False
+        lines = []
+        with open(os.path.join(overall_dir, calc.label + '.com'), 'r') as f:
+            lines = f.readlines()
+            for j in range(1, len(lines)):
+                if lines[j] == '\n' and lines[j - 1] == '\n':
+                    double_space = True
+                    break
+        if double_space:
+            lines = lines[0:j - 1] + lines[j:]
+            with open(os.path.join(overall_dir, calc.label + '.com'), 'w') as f:
+                f.writelines(lines)
 
-            # make the overall slurm script
-            slurm_run_file = os.path.join(overall_dir, f'run_{i:04}.sh')
-            slurm_settings = {
-                '--job-name': f'g16_overall_{reaction_index}',
-                '--error': 'error.log',
-                '--output': 'output.log',
-                '--nodes': 1,
-                '--partition': 'west,short',
-                '--exclude': 'c5003',
-                '--mem': '20Gb',
-                '--time': '24:00:00',
-                '--cpus-per-task': 16,
-                # TODO make this an array if multiple forward ts's
-            }
+        # make the overall slurm script
+        slurm_run_file = os.path.join(overall_dir, f'run_{i:04}.sh')
+        slurm_settings = {
+            '--job-name': f'g16_overall_{reaction_index}',
+            '--error': 'error.log',
+            '--output': 'output.log',
+            '--nodes': 1,
+            '--partition': 'west,short',
+            '--exclude': 'c5003',
+            '--mem': '20Gb',
+            '--time': '24:00:00',
+            '--cpus-per-task': 16,
+            # TODO make this an array if multiple forward ts's
+        }
 
-            slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
-            slurm_file_writer.settings = slurm_settings
-            slurm_file_writer.content = [
-                'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
-                'mkdir -p $GAUSS_SCRDIR\n',
-                'module load gaussian/g16\n',
-                'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+        slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+        slurm_file_writer.settings = slurm_settings
+        slurm_file_writer.content = [
+            'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+            'mkdir -p $GAUSS_SCRDIR\n',
+            'module load gaussian/g16\n',
+            'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
-                f'g16 {overall_label[:-4]}.com' + '\n',
-            ]
-            slurm_file_writer.write_file()
+            f'g16 {overall_label[:-4]}.com' + '\n',
+        ]
+        slurm_file_writer.write_file()
 
-            # submit the job
-            start_dir = os.getcwd()
-            os.chdir(overall_dir)
-            overall_job = job_manager.SlurmJob()
-            slurm_cmd = f"sbatch {slurm_run_file}"
-            overall_job.submit(slurm_cmd)
-            os.chdir(start_dir)
-            overall_job.wait(check_interval=600)
+        # submit the job
+        start_dir = os.getcwd()
+        os.chdir(overall_dir)
+        overall_job = job_manager.SlurmJob()
+        slurm_cmd = f"sbatch {slurm_run_file}"
+        overall_job.submit(slurm_cmd)
+
+    # only wait once all jobs have been submitted
+    os.chdir(start_dir)
+    overall_job.wait(check_interval=60)

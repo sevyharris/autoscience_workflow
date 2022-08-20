@@ -1,6 +1,6 @@
 # Script for running a thermo job for one species
 import sys
-import job
+import job  # TODO rename this to something more descriptive
 
 
 species_index = int(sys.argv[1])

@@ -3,11 +3,14 @@ import pandas as pd
 import re
 import os
 import glob
+import subprocess
 import autotst.reaction
 import autotst.calculator.gaussian
 import job_manager
-from hotbit import Hotbit
+from hotbit import Hotbit  # TODO - move this and other autoTST dependencies elsewhere
 import ase.io.gaussian
+import rmgpy.reaction
+import rmgpy.species
 
 
 try:
@@ -25,14 +28,92 @@ def get_num_reactions():
     return reaction_df.i.values[-1]
 
 
+def reaction2smiles(reaction):
+    """Takes an RMG reaction and returns the smiles representation
+    """
+    string = ""
+    for react in reaction.reactants:
+        if isinstance(react, rmgpy.species.Species):
+            string += f"{react.molecule[0].to_smiles()}+"
+        elif isinstance(react, rmgpy.molecule.Molecule):
+            string += f"{react.to_smiles()}+"
+    string = string[:-1]
+    string += "_"
+    for prod in reaction.products:
+        if isinstance(prod, rmgpy.species.Species):
+            string += f"{prod.molecule[0].to_smiles()}+"
+        elif isinstance(prod, rmgpy.molecule.Molecule):
+            string += f"{prod.to_smiles()}+"
+    label = string[:-1]
+    return label
+
+
+def smiles2reaction(reaction_smiles):
+    """Takes the reaction smiles and produces a corresponding rmg reaction
+    """
+    reaction = rmgpy.reaction.Reaction()
+    reactants = []
+    products = []
+
+    # handle CO case
+    if '[C-]#[O+]' in reaction_smiles:
+        CO = rmgpy.species.Species(smiles='[C-]#[O+]')
+        reaction_smiles = reaction_smiles.replace('[C-]#[O+]', 'carbonmonoxide')
+
+    reactant_token = reaction_smiles.split('_')[0]
+    product_token = reaction_smiles.split('_')[1]
+
+    reactant_tokens = reactant_token.split('+')
+    product_tokens = product_token.split('+')
+
+    # print(product_tokens)
+    for reactant_str in reactant_tokens:
+        if reactant_str == 'carbonmonoxide':
+            reactant_str = '[C-]#[O+]'
+        reactant = rmgpy.species.Species(smiles=reactant_str)
+        reactants.append(reactant)
+    for product_str in product_tokens:
+        if product_str == 'carbonmonoxide':
+            product_str = '[C-]#[O+]'
+        # print(product_str)
+        product = rmgpy.species.Species(smiles=product_str)
+        products.append(product)
+
+    reaction.reactants = reactants
+    reaction.products = products
+    return reaction
+
+
 def reaction_index2smiles(reaction_index):
     """Function to return reaction smiles given a reaction index
     looks up the results in the reaction_list.csv
     """
     reaction_csv = os.path.join(DFT_DIR, 'reaction_list.csv')
     reaction_df = pd.read_csv(reaction_csv)
-    reaction_smiles = reaction_df.SMILES.values[reaction_index]
+    reaction_smiles = reaction_df['SMILES'].values[reaction_index]
     return reaction_smiles
+
+
+def reaction_smiles2index(reaction_smiles):
+    """Function to return reaction index given a smiles reaction
+    doesn't necessarily have to be in the right order
+    RMG reaction will check for isomorphism
+    """
+    # first check to see if the exact smiles is in the CSV
+    reaction_csv = os.path.join(DFT_DIR, 'reaction_list.csv')
+    reaction_df = pd.read_csv(reaction_csv)
+    if reaction_smiles in reaction_df['SMILES'].values:
+        idx = np.where(reaction_df['SMILES'].values == reaction_smiles)[0][0]
+        return reaction_df['i'].values[idx]
+    else:
+        # use rmgpy.reaction to check for isomorphism
+        ref_reaction = smiles2reaction(reaction_smiles)
+        for i in range(0, len(reaction_df)):
+            csv_reaction = smiles2reaction(reaction_df['SMILES'].values[i])
+            if ref_reaction.is_isomorphic(csv_reaction):
+                return i
+    # reaction not found
+    return -1
 
 
 def termination_status(log_file):
@@ -102,16 +183,25 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     if not incomplete_indices and len(shell_gaussian_logs) > 0:
         return True  # only if all of them ran
 
+    print('Constructing reaction in AutoTST...')
+    with open(logfile, 'a') as f:
+        f.write('Constructing reaction in AutoTST...\n')
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
     reaction.generate_conformers(ase_calculator=Hotbit())
+    print('Done generating conformers in AutoTST...')
+    print(f'{len(reaction.ts[direction])} conformers found')
+    with open(logfile, 'a') as f:
+        f.write('Done generating conformers in AutoTST...\n')
+        f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
 
     # Do the shell calculations
     # write Gaussian input files
     for i in range(0, len(reaction.ts[direction])):
         if i not in incomplete_indices and len(shell_gaussian_logs) > 0:
-            print(f'Skipping completed index {i}')
+            with open(logfile, 'a') as f:
+                f.write(f'skipping completed shell {i}' + '\n')
             continue
 
         shell_label = shell_label[:-8] + f'{i:04}.log'
@@ -190,6 +280,8 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     overall_dir = os.path.join(reaction_base_dir, 'overall')
     os.makedirs(overall_dir, exist_ok=True)
 
+    logfile = os.path.join(overall_dir, 'overall.log')
+
     overall_label = 'fwd_ts_0000.log'
     direction = 'forward'
     if use_reverse:
@@ -204,9 +296,9 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
         if os.path.exists(overall_ts_log):
             status = termination_status(overall_ts_log)
             if status == 0:
-                print('Overall TS optimization already ran')
+                print(f'Overall TS optimization already ran for reaction {reaction_index}')
                 with open(logfile, 'a') as f:
-                    f.write('Overall TS optimization already ran\n')
+                    f.write(f'Overall TS optimization already ran for reaction {reaction_index}' + '\n')
             else:
                 matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
                 run_index = int(matches[1])
@@ -214,10 +306,18 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     if not incomplete_indices and len(overall_gaussian_logs) > 0:
         return True
 
+    print('Constructing reaction in AutoTST...')
+    with open(logfile, 'a') as f:
+        f.write('Constructing reaction in AutoTST...\n')
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
     reaction.generate_conformers(ase_calculator=Hotbit())
+    print('Done generating conformers in AutoTST...')
+    print(f'{len(reaction.ts[direction])} conformers found')
+    with open(logfile, 'a') as f:
+        f.write('Done generating conformers in AutoTST...\n')
+        f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
 
     for i in range(0, len(reaction.ts[direction])):
@@ -297,3 +397,45 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     # only wait once all jobs have been submitted
     os.chdir(start_dir)
     overall_job.wait(check_interval=60)
+
+
+def arkane_complete(reaction_index):
+    return os.path.exists(os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}', 'arkane', 'RMG_libraries', 'reactions.py'))
+
+
+def run_arkane_job(reaction_index):
+    # start a job to run arkane
+    reaction_smiles = reaction_index2smiles(reaction_index)
+    print(f'starting run_arkane_job for reaction {reaction_index} {reaction_smiles}')
+    species_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
+    arkane_dir = os.path.join(species_dir, 'arkane')
+    os.makedirs(arkane_dir, exist_ok=True)
+    arkane_result = os.path.join(arkane_dir, 'RMG_libraries', 'reactions.py')  # ??
+    if arkane_complete(reaction_index):
+        print('Arkane job already ran')
+        return True
+
+    # setup the arkane job
+    # arkane_cmd = f'snakemake -c1 run_arkane_kinetics --config reaction_index={reaction_index}'
+    # print(f'Running {arkane_cmd}')
+    # cmd_pieces = arkane_cmd.split()
+    # proc = subprocess.Popen(cmd_pieces, stdin=None, stdout=None, stderr=None, close_fds=True)
+    # print(proc)
+
+    # setup the arkane job using the script directly since conda environments are incompatible
+    setup_script = "setup_arkane_kinetics.py"
+    setup_script = "/work/westgroup/harris.se/autoscience/autoscience_workflow/workflow/scripts/kinetics/setup_arkane_kinetics.py"
+    setup_cmd = f'python {setup_script} {reaction_index}'
+    cmd_pieces = setup_cmd.split()
+    # apparently subprocess.call is blocking and subprocess.Popen is not
+    proc = subprocess.call(cmd_pieces)
+
+    # Run the arkane job
+    start_dir = os.getcwd()
+    os.chdir(arkane_dir)
+    # arkane_job = job_manager.SlurmJob()
+    slurm_cmd = f"sbatch run_arkane.sh"
+    slurm_pieces = slurm_cmd.split()
+    proc = subprocess.call(slurm_pieces)
+    #arkane_job.submit(slurm_cmd)
+

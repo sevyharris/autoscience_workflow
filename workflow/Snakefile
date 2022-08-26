@@ -22,6 +22,7 @@ rotors_dir = os.path.join(species_dir, 'rotors')
 arkane_dir = os.path.join(species_dir, 'arkane')
 
 reaction_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
+arkane_rxn_dir = os.path.join(reaction_dir, 'arkane')
 
 
 rmg_runs_dir = ''
@@ -109,10 +110,33 @@ rule run_arkane_thermo:
             . $HOME/.bashrc
             conda activate /work/westgroup/harris.se/tst_env
             cd {arkane_dir}
-            sbatch {input.run_arkane_script}
+            sbatch -J arkane_thermo_{species_index} {input.run_arkane_script}
             conda deactivate'
         """
 
+rule setup_arkane_kinetics:
+    output:
+        run_arkane_script = os.path.join(arkane_rxn_dir, 'run_arkane.sh')
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            python scripts/kinetics/setup_arkane_kinetics_input.py {reaction_index}
+            conda deactivate'
+        """
+
+rule run_arkane_kinetics:
+    input:
+        run_arkane_script = os.path.join(arkane_rxn_dir, 'run_arkane.sh')
+    shell:
+        """
+        bash -c '
+            . $HOME/.bashrc
+            conda activate /work/westgroup/harris.se/tst_env
+            cd {arkane_rxn_dir}
+            sbatch -J arkane_rxn_{reaction_index} {input.run_arkane_script}
+        """
 
 rule list_species_in_reaction:
     # determine which species calculations are needed to make the reaction calculation

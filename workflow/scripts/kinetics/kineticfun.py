@@ -20,6 +20,33 @@ except KeyError:
     DFT_DIR = "/work/westgroup/harris.se/autoscience/autoscience/butane/dft"
 
 
+def ordered_array_str(list_of_indices):
+    # convenient script for putting a list of task numbers into a string that can be used for a SLURM array job
+    # assume it's sorted
+    if len(list_of_indices) == 1:
+        return str(list_of_indices[0])
+    elif len(list_of_indices) == 2:
+        return f'{list_of_indices[0]}, {list_of_indices[1]}'
+
+    array_str = str(list_of_indices[0]) + '-'
+    for j in range(1, len(list_of_indices) - 1):
+        if list_of_indices[j] - list_of_indices[j - 1] != 1:
+            if j > 1:
+                array_str += str(list_of_indices[j - 1])
+                array_str += f',{list_of_indices[j]}-'
+            else:
+                array_str = array_str.replace('-', ',')
+                array_str += f'{list_of_indices[j]}-'
+        # cap the end
+        if j + 2 == len(list_of_indices):
+            if list_of_indices[j + 1] - list_of_indices[j] != 1:
+                array_str += f'{list_of_indices[j]},{list_of_indices[j + 1]}'
+            else:
+                array_str += f'{list_of_indices[j + 1]}'
+
+    return array_str
+
+
 def get_num_reactions():
     """Function to lookup number of reactions in the reaction_list.csv
     """
@@ -198,6 +225,7 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
 
     # Do the shell calculations
     # write Gaussian input files
+    slurm_array_idx = []
     for i in range(0, len(reaction.ts[direction])):
         if i not in incomplete_indices and len(shell_gaussian_logs) > 0:
             with open(logfile, 'a') as f:
@@ -205,6 +233,8 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
             continue
 
         shell_label = shell_label[:-8] + f'{i:04}.log'
+        # TODO if the thing already ran, do not rerun it
+        slurm_array_idx.append(i)
 
         ts = reaction.ts[direction][i]
         gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
@@ -230,40 +260,44 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
             with open(os.path.join(shell_dir, calc.label + '.com'), 'w') as f:
                 f.writelines(lines)
 
-        # make the shell slurm script
-        slurm_run_file = os.path.join(shell_dir, f'run_{i:04}.sh')
-        slurm_settings = {
-            '--job-name': f'g16_shell_{reaction_index}',
-            '--error': 'error.log',
-            '--output': 'output.log',
-            '--nodes': 1,
-            '--partition': 'west,short',
-            '--exclude': 'c5003',
-            '--mem': '20Gb',
-            '--time': '24:00:00',
-            '--cpus-per-task': 16,
-            # TODO make this an array if multiple forward ts's
-        }
-        slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
-        slurm_file_writer.settings = slurm_settings
-        slurm_file_writer.content = [
-            'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
-            'mkdir -p $GAUSS_SCRDIR\n',
-            'module load gaussian/g16\n',
-            'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+    # make the shell slurm script
+    slurm_run_file = os.path.join(shell_dir, f'run_shell_opt.sh')
+    slurm_settings = {
+        '--job-name': f'g16_shell_{reaction_index}',
+        '--error': 'error.log',
+        '--output': 'output.log',
+        '--nodes': 1,
+        '--partition': 'west,short',
+        '--exclude': 'c5003',
+        '--mem': '20Gb',
+        '--time': '24:00:00',
+        '--cpus-per-task': 16,
+        '--array': ordered_array_str(slurm_array_idx),
+        # TODO make this an array if multiple forward ts's
+    }
+    slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+    slurm_file_writer.settings = slurm_settings
+    slurm_file_writer.content = [
+        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'mkdir -p $GAUSS_SCRDIR\n',
+        'module load gaussian/g16\n',
+        'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
-            f'g16 {shell_label[:-4]}.com' + '\n',
-        ]
-        slurm_file_writer.write_file()
+        'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
+        f'fname="{shell_label[:-4]}.com"' + '\n\n',
 
-        # submit the job
-        with open(logfile, 'a') as f:
-            f.write('Submitting shell optimization job\n')
-        start_dir = os.getcwd()
-        os.chdir(shell_dir)
-        shell_job = job_manager.SlurmJob()
-        slurm_cmd = f"sbatch {slurm_run_file}"
-        shell_job.submit(slurm_cmd)
+        'g16 $fname\n',
+    ]
+    slurm_file_writer.write_file()
+
+    # submit the job
+    with open(logfile, 'a') as f:
+        f.write('Submitting shell optimization job\n')
+    start_dir = os.getcwd()
+    os.chdir(shell_dir)
+    shell_job = job_manager.SlurmJob()
+    slurm_cmd = f"sbatch {slurm_run_file}"
+    shell_job.submit(slurm_cmd)
 
     # only wait after all jobs have been submitted
     os.chdir(start_dir)
@@ -320,6 +354,7 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
         f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
 
+    slurm_array_idx = []
     for i in range(0, len(reaction.ts[direction])):
         if i not in incomplete_indices and len(overall_gaussian_logs) > 0:
             print(f'Skipping completed index {i}')
@@ -335,6 +370,8 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
             # handle case where all degrees of freedom were frozen in the shell calculation
             if len(reaction.ts[direction][i]._ase_molecule) > 3:
                 raise ValueError('Shell optimization failed to converge. Rerun it!')
+
+        slurm_array_idx.append(i)
 
         ts = reaction.ts[direction][i]
         gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
@@ -360,39 +397,42 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
             with open(os.path.join(overall_dir, calc.label + '.com'), 'w') as f:
                 f.writelines(lines)
 
-        # make the overall slurm script
-        slurm_run_file = os.path.join(overall_dir, f'run_{i:04}.sh')
-        slurm_settings = {
-            '--job-name': f'g16_overall_{reaction_index}',
-            '--error': 'error.log',
-            '--output': 'output.log',
-            '--nodes': 1,
-            '--partition': 'west,short',
-            '--exclude': 'c5003',
-            '--mem': '20Gb',
-            '--time': '24:00:00',
-            '--cpus-per-task': 16,
-            # TODO make this an array if multiple forward ts's
-        }
+    # make the overall slurm script
+    slurm_run_file = os.path.join(overall_dir, f'run_overall_opt.sh')
+    slurm_settings = {
+        '--job-name': f'g16_overall_{reaction_index}',
+        '--error': 'error.log',
+        '--output': 'output.log',
+        '--nodes': 1,
+        '--partition': 'west,short',
+        '--exclude': 'c5003',
+        '--mem': '20Gb',
+        '--time': '24:00:00',
+        '--cpus-per-task': 16,
+        '--array': ordered_array_str(slurm_array_idx),
+    }
 
-        slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
-        slurm_file_writer.settings = slurm_settings
-        slurm_file_writer.content = [
-            'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
-            'mkdir -p $GAUSS_SCRDIR\n',
-            'module load gaussian/g16\n',
-            'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+    slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+    slurm_file_writer.settings = slurm_settings
+    slurm_file_writer.content = [
+        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'mkdir -p $GAUSS_SCRDIR\n',
+        'module load gaussian/g16\n',
+        'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
-            f'g16 {overall_label[:-4]}.com' + '\n',
-        ]
-        slurm_file_writer.write_file()
+        'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
+        f'fname="{overall_label[:-4]}.com"' + '\n\n',
 
-        # submit the job
-        start_dir = os.getcwd()
-        os.chdir(overall_dir)
-        overall_job = job_manager.SlurmJob()
-        slurm_cmd = f"sbatch {slurm_run_file}"
-        overall_job.submit(slurm_cmd)
+        'g16 $fname\n',
+    ]
+    slurm_file_writer.write_file()
+
+    # submit the job
+    start_dir = os.getcwd()
+    os.chdir(overall_dir)
+    overall_job = job_manager.SlurmJob()
+    slurm_cmd = f"sbatch {slurm_run_file}"
+    overall_job.submit(slurm_cmd)
 
     # only wait once all jobs have been submitted
     os.chdir(start_dir)

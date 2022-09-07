@@ -30,8 +30,34 @@ def index2smiles(species_index):
     """
     species_csv = os.path.join(DFT_DIR, 'species_list.csv')
     species_df = pd.read_csv(species_csv)
-    species_smiles = species_df.SMILES.values[species_index]
-    return species_smiles
+    species_index = species_df.SMILES.values[species_index]
+    return species_index
+
+
+def smiles2index(species_smiles):
+    """Function to return species index given a species smiles
+    looks up the results in the species_list.csv
+    """
+    species_csv = os.path.join(DFT_DIR, 'species_list.csv')
+    species_df = pd.read_csv(species_csv)
+    try:
+        species_index = species_df[species_df['SMILES'] == species_smiles]['i'].values[0]
+        return species_index
+    except IndexError:
+        import rmgpy.species
+        # now we need to check all the species for isomorphism
+        ref_sp = rmgpy.species.Species(smiles=species_smiles)
+        for i in range(0, len(species_df)):
+            sp = rmgpy.species.Species(smiles=species_df['SMILES'].values[i])
+            resonance = sp.generate_resonance_structures()
+            if resonance:
+                sp = resonance
+            else:
+                sp = [sp]
+            for compare_sp in sp:
+                if ref_sp.is_isomorphic(compare_sp):
+                    return i
+        print(f'could not identify species {species_smiles}')
 
 
 def arkane_complete(species_index):
@@ -180,7 +206,7 @@ def restart_conformers(species_index):
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
     slurm_file_writer.content = [
-        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
         'mkdir -p $GAUSS_SCRDIR\n',
         'module load gaussian/g16\n',
         'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
@@ -237,7 +263,7 @@ def restart_rotors(species_index):
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
     slurm_file_writer.content = [
-        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
         'mkdir -p $GAUSS_SCRDIR\n',
         'module load gaussian/g16\n',
         'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',

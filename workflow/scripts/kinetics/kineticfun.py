@@ -278,13 +278,13 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
     slurm_file_writer.content = [
-        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
         'mkdir -p $GAUSS_SCRDIR\n',
         'module load gaussian/g16\n',
         'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
         'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
-        f'fname="{shell_label[:-4]}.com"' + '\n\n',
+        f'fname="{shell_label[:-8]}' + '${RUN_i}.com"\n\n',
 
         'g16 $fname\n',
     ]
@@ -415,13 +415,13 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
     slurm_file_writer.content = [
-        'export GAUSS_SCRDIR=/scratch/harris.se/guassian_scratch\n',
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
         'mkdir -p $GAUSS_SCRDIR\n',
         'module load gaussian/g16\n',
         'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
 
         'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
-        f'fname="{overall_label[:-4]}.com"' + '\n\n',
+        f'fname="{overall_label[:-8]}' + '${RUN_i}.com"\n\n',
 
         'g16 $fname\n',
     ]

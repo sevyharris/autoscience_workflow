@@ -146,8 +146,10 @@ def reaction_smiles2index(reaction_smiles):
 def termination_status(log_file):
     """Returns:
     0 for Normal termination
-    1 for Error termination - due to all degrees of freedom being frozen
-    2 for Error termination not falling under 1
+    1 for Error termination not covered below
+    2 for Error termination - due to all degrees of freedom being frozen
+    3 for Error termination - Problem with the distance matrix. 
+    4 for No NMR shielding tensors so no spin-rotation constants  # TODO debug this instead of ignoring it
     -1 for no termination
     """
     error_termination = False
@@ -155,7 +157,7 @@ def termination_status(log_file):
         f.seek(0, os.SEEK_END)
         normal_termination = False
         error_termination = False
-        for i in range(0, 10):
+        for i in range(0, 20):
             try:
                 f.seek(-2, os.SEEK_CUR)
                 while f.read(1) != b'\n':
@@ -170,10 +172,58 @@ def termination_status(log_file):
             elif 'Error termination' in last_line:
                 error_termination = True
             elif 'All variables have been frozen' in last_line:
-                return 1
+                return 2
+            elif 'Problem with the distance matrix' in last_line:
+                return 3
+            elif 'No NMR shielding tensors so no spin-rotation constants' in last_line:
+                return 4
+            elif 'MANUAL SKIP' in last_line.upper():
+                return 5
         if error_termination:
-            return 2
+            return 1
         return -1
+
+
+def shell_complete(reaction_index, use_reverse=False):
+    # return True if all shell calculations have completed
+    # returns true even if one of the shell calculations had the error with distance matrix problem
+    reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{int(reaction_index):04}')
+    shell_dir = os.path.join(reaction_base_dir, 'shell')
+    if not os.path.exists(shell_dir):
+        return False
+    logfile = os.path.join(shell_dir, 'shell.log')
+
+    # Check for already finished shell logfiles
+    # first, return if all of them have finished
+    shell_label = 'fwd_ts_0000.log'
+    direction = 'forward'
+    if use_reverse:
+        shell_label = 'rev_ts_0000.log'
+        direction = 'reverse'
+    shell_opt_log = os.path.join(shell_dir, shell_label)
+
+    shell_gaussian_logs = glob.glob(os.path.join(shell_dir, shell_label[:-8] + '*.log'))
+    incomplete_indices = []
+    good_runs = []
+    for shell_opt_log in shell_gaussian_logs:
+        if os.path.exists(shell_opt_log):
+            status = termination_status(shell_opt_log)
+            print(status, shell_opt_log)
+            if status == 0:
+                matches = re.search(shell_label[:-8] + '([0-9]{4})', shell_opt_log)
+                run_index = int(matches[1])
+                good_runs.append(run_index)
+            elif status == 2 or status == 3 or status == 4 or status == 5:
+                #print('Shell optimization already ran')
+                with open(logfile, 'a') as f:
+                    f.write('Shell optimization already ran\n')
+            else:
+                matches = re.search(shell_label[:-8] + '([0-9]{4})', shell_opt_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+    if not incomplete_indices and len(good_runs) > 0:
+        return True  # only if there's at least one useable run
+    return False   
 
 
 def run_TS_shell_calc(reaction_index, use_reverse=False):
@@ -192,14 +242,14 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     if use_reverse:
         shell_label = 'rev_ts_0000.log'
         direction = 'reverse'
-    shell_opt_log = os.path.join(shell_dir, shell_label)
+    shell_opt_log = os.path.join(shell_dir, shell_label)    
 
     shell_gaussian_logs = glob.glob(os.path.join(shell_dir, shell_label[:-8] + '*.log'))
     incomplete_indices = []
     for shell_opt_log in shell_gaussian_logs:
         if os.path.exists(shell_opt_log):
             status = termination_status(shell_opt_log)
-            if status == 0 or status == 1:
+            if status == 0 or status == 2 or status == 3 or status == 4 or status == 5:
                 print('Shell optimization already ran')
                 with open(logfile, 'a') as f:
                     f.write('Shell optimization already ran\n')
@@ -226,10 +276,12 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     # Do the shell calculations
     # write Gaussian input files
     slurm_array_idx = []
+    restart = False
     for i in range(0, len(reaction.ts[direction])):
         if i not in incomplete_indices and len(shell_gaussian_logs) > 0:
             with open(logfile, 'a') as f:
                 f.write(f'skipping completed shell {i}' + '\n')
+            restart = True
             continue
 
         shell_label = shell_label[:-8] + f'{i:04}.log'
@@ -262,6 +314,8 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
 
     # make the shell slurm script
     slurm_run_file = os.path.join(shell_dir, f'run_shell_opt.sh')
+    if restart:
+        slurm_run_file = os.path.join(shell_dir, f'restart.sh')
     slurm_settings = {
         '--job-name': f'g16_shell_{reaction_index}',
         '--error': 'error.log',
@@ -304,6 +358,49 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     shell_job.wait(check_interval=60)
 
 
+def overall_complete(reaction_index, use_reverse=False):
+    reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{int(reaction_index):04}')
+    os.makedirs(reaction_base_dir, exist_ok=True)
+    overall_dir = os.path.join(reaction_base_dir, 'overall')
+
+    logfile = os.path.join(overall_dir, 'overall.log')
+
+    overall_label = 'fwd_ts_0000.log'
+    direction = 'forward'
+    if use_reverse:
+        overall_label = 'rev_ts_0000.log'
+        direction = 'reverse'
+    overall_ts_log = os.path.join(overall_dir, overall_label)
+
+    # check that the overall job hasn't finished
+    # in this case, terminating with an error is okay, as long as it terminated
+    overall_gaussian_logs = glob.glob(os.path.join(overall_dir, overall_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for overall_ts_log in overall_gaussian_logs:
+        if os.path.exists(overall_ts_log):
+            status = termination_status(overall_ts_log)
+            print(status, overall_ts_log)
+            if status == 0:
+                print(f'Overall TS optimization already ran for reaction {overall_ts_log}')
+                with open(logfile, 'a') as f:
+                    f.write(f'Overall TS optimization already ran for reaction {overall_ts_log}' + '\n')
+            elif status == 2 or status == 3 or status == 4 or status == 5:  # completed but with error
+                matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
+                run_index = int(matches[1])
+                # incomplete_indices.append(run_index)
+                print(f'Overall TS optimization ran with error for {overall_ts_log}')
+                with open(logfile, 'a') as f:
+                    f.write(f'Overall TS optimization ran with error for {overall_ts_log}' + '\n')
+            else:
+                matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+    print(incomplete_indices)
+    if not incomplete_indices and len(overall_gaussian_logs) > 0:
+        return True
+    return False
+
+
 def run_TS_overall_calc(reaction_index, use_reverse=False):
     """Start a TS optimization from the geometry of the shell calculation
     """
@@ -324,20 +421,8 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     overall_ts_log = os.path.join(overall_dir, overall_label)
 
     # check that the overall job hasn't finished
-    overall_gaussian_logs = glob.glob(os.path.join(overall_dir, overall_label[:-8] + '*.log'))
-    incomplete_indices = []
-    for overall_ts_log in overall_gaussian_logs:
-        if os.path.exists(overall_ts_log):
-            status = termination_status(overall_ts_log)
-            if status == 0:
-                print(f'Overall TS optimization already ran for reaction {reaction_index}')
-                with open(logfile, 'a') as f:
-                    f.write(f'Overall TS optimization already ran for reaction {reaction_index}' + '\n')
-            else:
-                matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
-                run_index = int(matches[1])
-                incomplete_indices.append(run_index)
-    if not incomplete_indices and len(overall_gaussian_logs) > 0:
+    # in this case, terminating with an error is okay, as long as it terminated (status 2)
+    if overall_complete(reaction_index):
         return True
 
     print('Constructing reaction in AutoTST...')
@@ -354,14 +439,25 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
         f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
 
+    restart = False
     slurm_array_idx = []
     for i in range(0, len(reaction.ts[direction])):
         if i not in incomplete_indices and len(overall_gaussian_logs) > 0:
             print(f'Skipping completed index {i}')
+            restart = True
             continue
 
         overall_label = overall_label[:-8] + f'{i:04}.log'
         shell_opt = os.path.join(shell_dir, overall_label)
+        
+        # skip shell conformers that didn't converge
+        status = termination_status(shell_opt)
+        if status != 0:
+            print(f'Skipping unconverged shell {i}')
+            with open(logfile, 'a') as f:
+                f.write(f'Skipping unconverged shell {i}')
+            continue
+
         try:
             with open(shell_opt, 'r') as f:
                 atoms = ase.io.gaussian.read_gaussian_out(f)
@@ -399,6 +495,8 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
 
     # make the overall slurm script
     slurm_run_file = os.path.join(overall_dir, f'run_overall_opt.sh')
+    if restart:
+        slurm_run_file = os.path.join(overall_dir, f'restart.sh')
     slurm_settings = {
         '--job-name': f'g16_overall_{reaction_index}',
         '--error': 'error.log',

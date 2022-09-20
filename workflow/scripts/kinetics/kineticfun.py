@@ -314,8 +314,6 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
 
     # make the shell slurm script
     slurm_run_file = os.path.join(shell_dir, f'run_shell_opt.sh')
-    if restart:
-        slurm_run_file = os.path.join(shell_dir, f'restart.sh')
     slurm_settings = {
         '--job-name': f'g16_shell_{reaction_index}',
         '--error': 'error.log',
@@ -329,6 +327,21 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
         '--array': ordered_array_str(slurm_array_idx),
         # TODO make this an array if multiple forward ts's
     }
+    if restart:
+        slurm_run_file = os.path.join(shell_dir, f'restart.sh')
+        slurm_settings = {
+            '--job-name': f'g16_shell_restart_{reaction_index}',
+            '--error': 'restart_error.log',
+            '--output': 'restart_output.log',
+            '--nodes': 1,
+            '--partition': 'short',
+            '--mem': '20Gb',
+            '--time': '24:00:00',
+            '--cpus-per-task': 32,
+            '--array': ordered_array_str(slurm_array_idx),
+        }
+
+
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
     slurm_file_writer.content = [
@@ -438,6 +451,18 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
         f.write('Done generating conformers in AutoTST...\n')
         f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
+
+
+    # define incomplete indices
+    overall_gaussian_logs = glob.glob(os.path.join(overall_dir, overall_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for overall_ts_log in overall_gaussian_logs:
+        if os.path.exists(overall_ts_log):
+            status = termination_status(overall_ts_log)
+            if status == -1 or status == 1:
+                matches = re.search(overall_label[:-8] + '([0-9]{4})', overall_ts_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
 
     restart = False
     slurm_array_idx = []

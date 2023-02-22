@@ -17,8 +17,11 @@ try:
 except ImportError:
     pass
 import ase.io.gaussian
+import ase.calculators.lj
 import rmgpy.reaction
 import rmgpy.species
+
+
 
 
 try:
@@ -819,6 +822,7 @@ def run_IRC_check(reaction_index):
     print(f'starting run_IRC_check for reaction {reaction_index} {reaction_smiles}')
     reaction_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
     irc_dir = os.path.join(reaction_dir, 'irc')
+    logfile = os.path.join(irc_dir, 'irc.log')
     os.makedirs(irc_dir, exist_ok=True)
 
     # Try the vibrational analysis check first
@@ -833,3 +837,100 @@ def run_IRC_check(reaction_index):
     # with open(os.path.join(irc_dir, 'vibrational_analysis_check.txt'), 'w') as f:  # maybe it does belong in irc folder
     with open(os.path.join(reaction_dir, 'arkane', 'vibrational_analysis_check.txt'), 'w') as f:
         f.write(str(vib_check_result))
+
+    if vib_check_result:
+        # IRC check is confirmed with vibrational analysis
+        return vib_check_result
+
+    # If vibrational analysis check fails, run full IRC check using geometry from reaction_logfile
+    # setup the IRC job
+    # TODO check for previous run of IRC
+
+    # figure out if we need to restart the IRC
+    if os.path.exists(irc_dir, 'irc_result.txt'):
+        with open(irc_dir, 'irc_result.txt', 'r') as f:
+            irc_result = f.read()
+        if irc_result == 'True':
+            return True
+        else:
+            # TODO - restart the IRC
+            pass
+
+    print('Constructing reaction in AutoTST...')
+    with open(logfile, 'a') as f:
+        f.write('Constructing reaction in AutoTST...\n')
+
+    reaction = autotst.reaction.Reaction(label=reaction_smiles)
+    direction = 'forward'
+    reaction.ts[direction][0].get_molecules()
+    # reaction.generate_conformers(ase_calculator=Hotbit())
+    # reaction.generate_conformers(ase_calculator=ase.calculators.lj.LennardJones())
+    reaction.generate_conformers(ase_calculator='SKIP')
+
+    print('Done generating conformers in AutoTST...')
+    print(f'{len(reaction.ts[direction])} conformers found')
+    with open(logfile, 'a') as f:
+        f.write('Done generating conformers in AutoTST...\n')
+        f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
+    # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
+
+    # get the conformer index associated with the reaction log file
+    conformer_index = int(reaction_logfile.split('_')[-1].split('.')[0])
+    assert conformer_index < len(reaction.ts[direction])
+    irc_label = f'fwd_ts_{conformer_index:04}.log'
+
+    # read in geometry from reaction log file
+    with open(reaction_logfile, 'r') as f:
+        atoms = ase.io.gaussian.read_gaussian_out(f)
+        reaction.ts[direction][conformer_index]._ase_molecule = atoms
+
+    ts = reaction.ts[direction][conformer_index]
+    gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
+    calc = gaussian.get_irc_calc()
+    calc.label = irc_label[:-4]
+    calc.directory = irc_dir
+    calc.parameters.pop('scratch')
+    calc.parameters.pop('multiplicity')
+    calc.parameters['mult'] = ts.rmg_molecule.multiplicity
+    calc.write_input(ts.ase_molecule)
+
+    # make the overall slurm script
+    slurm_run_file = os.path.join(irc_dir, f'run_irc.sh')
+    slurm_settings = {
+        '--job-name': f'g16_irc_{reaction_index}',
+        '--error': 'error.log',
+        '--output': 'output.log',
+        '--nodes': 1,
+        '--partition': 'west,short',
+        '--exclude': 'c5003',
+        '--mem': '20Gb',
+        '--time': '24:00:00',
+        '--cpus-per-task': 16,
+    }
+
+    slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+    slurm_file_writer.settings = slurm_settings
+    slurm_file_writer.content = [
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
+        'mkdir -p $GAUSS_SCRDIR\n',
+        'module load gaussian/g16\n',
+        'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+
+        # 'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
+        # f'fname="{overall_label[:-8]}' + '${RUN_i}.com"\n\n',
+
+        f'fname="{irc_label[:-4]}.com"\n\n',
+        'g16 $fname\n',
+    ]
+    slurm_file_writer.write_file()
+
+    # submit the job
+    start_dir = os.getcwd()
+    os.chdir(irc_dir)
+    irc_job = job_manager.SlurmJob()
+    slurm_cmd = f"sbatch {slurm_run_file}"
+    irc_job.submit(slurm_cmd)
+
+    # only wait once all jobs have been submitted
+    os.chdir(start_dir)
+    irc_job.wait(check_interval=60)

@@ -6,6 +6,7 @@ import glob
 import numpy as np
 import subprocess
 import autotst.reaction
+import autotst.calculator.vibrational_analysis
 import autotst.calculator.gaussian
 try:
     import job_manager
@@ -171,7 +172,7 @@ def termination_status(log_file):
     0 for Normal termination
     1 for Error termination not covered below
     2 for Error termination - due to all degrees of freedom being frozen
-    3 for Error termination - Problem with the distance matrix. 
+    3 for Error termination - Problem with the distance matrix.
     4 for No NMR shielding tensors so no spin-rotation constants  # TODO debug this instead of ignoring it
     -1 for no termination
     """
@@ -237,7 +238,7 @@ def shell_complete(reaction_index, use_reverse=False):
                 run_index = int(matches[1])
                 good_runs.append(run_index)
             elif status == 2 or status == 3 or status == 4 or status == 5:
-                #print('Shell optimization already ran')
+                # print('Shell optimization already ran')
                 with open(logfile, 'a') as f:
                     f.write('Shell optimization already ran\n')
             else:
@@ -246,7 +247,7 @@ def shell_complete(reaction_index, use_reverse=False):
                 incomplete_indices.append(run_index)
     if not incomplete_indices and len(good_runs) > 0:
         return True  # only if there's at least one useable run
-    return False   
+    return False
 
 
 def run_TS_shell_calc(reaction_index, use_reverse=False):
@@ -265,7 +266,7 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     if use_reverse:
         shell_label = 'rev_ts_0000.log'
         direction = 'reverse'
-    shell_opt_log = os.path.join(shell_dir, shell_label)    
+    shell_opt_log = os.path.join(shell_dir, shell_label)
 
     shell_gaussian_logs = glob.glob(os.path.join(shell_dir, shell_label[:-8] + '*.log'))
     incomplete_indices = []
@@ -363,7 +364,6 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
             '--cpus-per-task': 32,
             '--array': ordered_array_str(slurm_array_idx),
         }
-
 
     slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
     slurm_file_writer.settings = slurm_settings
@@ -658,7 +658,7 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
 
         overall_label = overall_label[:-8] + f'{i:04}.log'
         shell_opt = os.path.join(shell_dir, overall_label)
-        
+
         # skip shell conformers that didn't converge
         status = termination_status(shell_opt)
         if status != 0:
@@ -784,5 +784,52 @@ def run_arkane_job(reaction_index):
     slurm_cmd = f"sbatch run_arkane.sh"
     slurm_pieces = slurm_cmd.split()
     proc = subprocess.call(slurm_pieces)
-    #arkane_job.submit(slurm_cmd)
+    # arkane_job.submit(slurm_cmd)
 
+
+def run_vibrational_analysis(reaction_smiles, reaction_logfile):
+    # runs the vibrational analysis check for a given TS, returns True if the TS is confirmed
+    reaction = autotst.reaction.Reaction(label=reaction_smiles)
+    va = autotst.calculator.vibrational_analysis.VibrationalAnalysis(
+        transitionstate=reaction.ts['forward'][0], log_file=reaction_logfile
+    )
+    result = va.validate_ts()
+    return result
+
+
+def vibrational_analysis_confirms_ts(reaction_index):
+    # Check whether TS is confirmed by vibrational analysis alone
+    # If confirmed, there will be a vibrational_analysis_check.txt file in the arkane directory with True
+    reaction_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
+    vib_file = os.path.join(reaction_dir, 'arkane', 'vibrational_analysis_check.txt')
+
+    if not os.path.exists(vib_file):
+        return False
+
+    with open(vib_file, 'r') as f:
+        vib_check = f.read()
+    if vib_check == 'True':
+        return True
+    return False
+
+
+def run_IRC_check(reaction_index):
+    # TODO get this to run using only smiles
+    reaction_smiles = reaction_index2smiles(reaction_index)
+    print(f'starting run_IRC_check for reaction {reaction_index} {reaction_smiles}')
+    reaction_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
+    irc_dir = os.path.join(reaction_dir, 'irc')
+    os.makedirs(irc_dir, exist_ok=True)
+
+    # Try the vibrational analysis check first
+    reaction_logfiles = glob.glob(
+        os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}', 'arkane', 'fwd_*.log')
+    )
+    assert len(reaction_logfiles) == 1
+    reaction_logfile = reaction_logfiles[0]
+
+    vib_check_result = run_vibrational_analysis(reaction_smiles, reaction_logfile)
+    # save result to file
+    # with open(os.path.join(irc_dir, 'vibrational_analysis_check.txt'), 'w') as f:  # maybe it does belong in irc folder
+    with open(os.path.join(reaction_dir, 'arkane', 'vibrational_analysis_check.txt'), 'w') as f:
+        f.write(str(vib_check_result))

@@ -100,6 +100,7 @@ def write_conformer_file(conformer, gauss_log, arkane_dir, include_rotors=True):
         18: "Ar",
         2: "He",
         10: "Ne",
+        16: "S",
     }
 
     atoms = []

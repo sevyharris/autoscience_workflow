@@ -2,8 +2,8 @@
 #SBATCH --job-name=all_thermo
 #SBATCH --error=error.log
 #SBATCH --output=output.log
-#SBATCH --partition=west
-#SBATCH --time=7-00:00:00
+#SBATCH --partition=short,west
+#SBATCH --time=1-00:00:00
 #SBATCH --mincpus=1
 #SBATCH --exclude=c5003
 

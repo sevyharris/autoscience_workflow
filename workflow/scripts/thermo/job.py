@@ -34,6 +34,14 @@ def index2smiles(species_index):
     return species_index
 
 
+def index2name(species_index):
+    """Function to return species name given in species_list.csv
+    """
+    species_csv = os.path.join(DFT_DIR, 'species_list.csv')
+    species_df = pd.read_csv(species_csv)
+    return species_df[species_df['i'] == species_index]['name'].values[0]
+
+
 def smiles2index(species_smiles):
     """Function to return species index given a species smiles
     looks up the results in the species_list.csv
@@ -44,6 +52,9 @@ def smiles2index(species_smiles):
         species_index = species_df[species_df['SMILES'] == species_smiles]['i'].values[0]
         return species_index
     except IndexError:
+        # print(f'could not identify species {species_smiles}')
+        raise IndexError(f'could not identify species {species_smiles}')
+        # you don't want to equate resonance structures
         import rmgpy.species
         # now we need to check all the species for isomorphism
         ref_sp = rmgpy.species.Species(smiles=species_smiles)
@@ -75,6 +86,7 @@ def termination_status(log_file):
     """Returns:
     0 for Normal termination
     1 for Error termination
+    5 for manual skip
     -1 for no termination
     """
     with open(log_file, 'rb') as f:
@@ -93,6 +105,8 @@ def termination_status(log_file):
             f.seek(saved_position, os.SEEK_SET)
             if 'Normal termination' in last_line:
                 return 0
+            elif 'MANUAL SKIP' in last_line.upper():
+                return 5
             elif 'Error termination' in last_line:
                 return 1
         return -1
@@ -475,11 +489,57 @@ def run_arkane_job(species_index):
         print('Arkane job already ran')
         return True
 
+    cwd = os.getcwd()
+    snakemake_dir = '/work/westgroup/harris.se/autoscience/autoscience_workflow/workflow'
+    os.chdir(snakemake_dir)
     arkane_cmd = f'snakemake -c1 run_arkane_thermo --config species_index={species_index}'
     print(f'Running {arkane_cmd}')
     cmd_pieces = arkane_cmd.split()
     proc = subprocess.Popen(cmd_pieces, stdin=None, stdout=None, stderr=None, close_fds=True)
     print(proc)
+    os.chdir(cwd)
+
+    # wait 10 minutes for Arkane start/finish
+    # try to read the slurm file in
+    print('Waiting for arkane job')
+    logfile = os.path.join(arkane_dir, 'snakemake_arkane.log')
+    with open(logfile, 'a') as f:
+        f.write('Waiting for arkane job\n')
+    while not os.path.exists(arkane_result):
+        time.sleep(30)
+
+        # TODO, give up if it has started running but hasn't completed in twenty minutes
+    print('Arkane complete')
+    with open(logfile, 'a') as f:
+        f.write('Arkane complete\n')
+
+    end = time.time()
+    duration = end - start
+    print(f'COMPLETED {species_smiles} IN {duration} SECONDS')
+    with open(logfile, 'a') as f:
+        f.write(f'COMPLETED {species_smiles} IN {duration} SECONDS' + '\n')
+
+
+# temporary function to make no_rotors library -- delete this after you're done with it
+def run_arkane_job_no_rotors(species_index):
+    # start a job that calls snakemake to run arkane
+    species_dir = os.path.join(DFT_DIR, 'no_rotors_thermo', f'species_{species_index:04}')
+    arkane_dir = os.path.join(species_dir, 'arkane')
+    os.makedirs(arkane_dir, exist_ok=True)
+    arkane_result = os.path.join(arkane_dir, 'RMG_libraries', 'thermo.py')
+    if os.path.exists(f'/work/westgroup/harris.se/autoscience/autoscience/butane/dft/no_rotors_thermo/species_{species_index:04}/arkane/RMG_libraries/thermo.py'):
+        print("arkane already ran")
+        return
+
+    cwd = os.getcwd()
+    snakemake_dir = '/work/westgroup/harris.se/autoscience/autoscience_workflow/workflow'
+    os.chdir(snakemake_dir)
+    arkane_cmd = f'snakemake -c1 run_arkane_thermo --config species_index={species_index}'
+    print(f'Running {arkane_cmd}')
+    cmd_pieces = arkane_cmd.split()
+    proc = subprocess.Popen(cmd_pieces, stdin=None, stdout=None, stderr=None, close_fds=True)
+    print(proc)
+    os.chdir(cwd)
 
     # wait 10 minutes for Arkane start/finish
     # try to read the slurm file in

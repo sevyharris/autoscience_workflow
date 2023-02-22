@@ -1,5 +1,6 @@
 # Functions for running a kinetics job using this workflow
 import pandas as pd
+import numpy as np
 import re
 import os
 import glob
@@ -37,7 +38,9 @@ def ordered_array_str(list_of_indices):
     if len(list_of_indices) == 1:
         return str(list_of_indices[0])
     elif len(list_of_indices) == 2:
-        return f'{list_of_indices[0]}, {list_of_indices[1]}'
+        return f'{list_of_indices[0]},{list_of_indices[1]}'
+    elif len(list_of_indices) == 0:
+        return -1
 
     array_str = str(list_of_indices[0]) + '-'
     for j in range(1, len(list_of_indices) - 1):
@@ -118,9 +121,9 @@ def smiles2reaction(reaction_smiles):
             reactant_str = '[O-][N+]#C'
         elif reactant_str == 'methylenenitroxide':
             reactant_str = '[O-][N+]=C'
-
         reactant = rmgpy.species.Species(smiles=reactant_str)
         reactants.append(reactant)
+    
     for product_str in product_tokens:
         if product_str == 'carbonmonoxide':
             product_str = '[C-]#[O+]'
@@ -128,7 +131,6 @@ def smiles2reaction(reaction_smiles):
             product_str = '[O-][N+]#C'
         elif product_str == 'methylenenitroxide':
             ptoduct_str = '[O-][N+]=C'
-
         # print(product_str)
         product = rmgpy.species.Species(smiles=product_str)
         products.append(product)
@@ -253,7 +255,7 @@ def shell_complete(reaction_index, use_reverse=False):
     return False
 
 
-def run_TS_shell_calc(reaction_index, use_reverse=False):
+def run_TS_shell_calc(reaction_index, use_reverse=False, max_combos=300, max_conformers=12):
     """Start an optimization keeping the reaction center fixed
     """
     reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
@@ -293,7 +295,7 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
-    reaction.generate_conformers(ase_calculator=Hotbit())
+    reaction.generate_conformers(ase_calculator=Hotbit(), max_combos=max_combos, max_conformers=max_conformers)
     print('Done generating conformers in AutoTST...')
     print(f'{len(reaction.ts[direction])} conformers found')
     with open(logfile, 'a') as f:
@@ -602,7 +604,7 @@ def overall_complete(reaction_index, use_reverse=False):
     return False
 
 
-def run_TS_overall_calc(reaction_index, use_reverse=False):
+def run_TS_overall_calc(reaction_index, use_reverse=False, max_combos=300, max_conformers=12):
     """Start a TS optimization from the geometry of the shell calculation
     """
     reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
@@ -632,7 +634,7 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
-    reaction.generate_conformers(ase_calculator=Hotbit())
+    reaction.generate_conformers(ase_calculator=Hotbit(), max_combos=max_combos, max_conformers=max_conformers)
     print('Done generating conformers in AutoTST...')
     print(f'{len(reaction.ts[direction])} conformers found')
     with open(logfile, 'a') as f:
@@ -661,6 +663,12 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
 
         overall_label = overall_label[:-8] + f'{i:04}.log'
         shell_opt = os.path.join(shell_dir, overall_label)
+        
+        if not os.path.exists(shell_opt):
+            print(f'WHY does it think this shell log should exist??? {shell_opt}')
+            with open(logfile, 'a') as f:
+                f.write(f'WHY does it think this shell log should exist??? {shell_opt}')
+            continue
 
         # skip shell conformers that didn't converge
         status = termination_status(shell_opt)
@@ -847,7 +855,7 @@ def run_IRC_check(reaction_index):
     # TODO check for previous run of IRC
 
     # figure out if we need to restart the IRC
-    if os.path.exists(irc_dir, 'irc_result.txt'):
+    if os.path.exists(os.path.join(irc_dir, 'irc_result.txt')):
         with open(irc_dir, 'irc_result.txt', 'r') as f:
             irc_result = f.read()
         if irc_result == 'True':

@@ -6,7 +6,7 @@ import zmatrix  # https://github.com/wutobias/r2z
 from simtk import unit
 
 
-def write_scan_file(fname, conformer, torsion_index, degree_delta=10.0):
+def write_scan_file(fname, conformer, torsion_index, degree_delta=20.0):
     """Function to write a Gaussian rotor scan
     Takes an autoTST conformer and a rotor index
     """

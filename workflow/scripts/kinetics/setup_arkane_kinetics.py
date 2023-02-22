@@ -54,8 +54,12 @@ def get_sp_name(smiles):
     for entry in species_dict.keys():
         if species_dict[entry].smiles == smiles:
             return str(species_dict[entry])
+    else:
+        index = job.smiles2index(smiles)
+        print(index)
+        return job.index2name(index)
     # need to look for isomorphism
-    print(f'Failed to get species name for {smiles}')
+    raise ValueError(f'Failed to get species name for {smiles}')
 
 
 direction = 'forward'
@@ -92,8 +96,11 @@ lines = [
     'useBondCorrections = False\n\n',
 ]
 
+
+incomplete_species = []
 completed_species = []
 for reactant in reaction.rmg_reaction.reactants + reaction.rmg_reaction.products:
+    # print(f'Adding species {reactant}')
     # check for duplicates
     duplicate = False
     for sp in completed_species:
@@ -111,6 +118,11 @@ for reactant in reaction.rmg_reaction.reactants + reaction.rmg_reaction.products
     species_index = job.smiles2index(species_smiles)
     species_arkane_dir = os.path.join(DFT_DIR, 'thermo', f'species_{species_index:04}', 'arkane')
 
+    if not glob.glob(os.path.join(species_arkane_dir, 'conformer_*.py')):
+        incomplete_species.append(species_index)
+        print(f'Could not find completed conformer_*.py file for species {species_index}: {reactant}')
+        continue
+
     species_file = os.path.join(f'species_{species_index:04}', os.path.basename(glob.glob(os.path.join(species_arkane_dir, 'conformer_*.py'))[0]))
 
     try:
@@ -123,6 +135,10 @@ for reactant in reaction.rmg_reaction.reactants + reaction.rmg_reaction.products
     lines.append(f'thermo("{species_name}", "NASA")\n\n')
 
     completed_species.append(reactant)
+
+if incomplete_species:
+    print(f'Incomplete species: {incomplete_species}')
+    raise OSError(f'There are incomplete species')
 
 
 lines.append('\n')

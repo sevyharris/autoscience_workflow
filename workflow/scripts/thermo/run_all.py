@@ -8,7 +8,7 @@ n_species = job.get_num_species()
 print(n_species)
 # skip_indices = [1, 2, 3, 4, 9, 10, 42, 45, 46, 47]
 skip_indices = [9, 10]
-for species_index in range(50, n_species + 1):
+for species_index in range(110, 180):
     species_smiles = job.index2smiles(species_index)
     if species_index in skip_indices:
         with open(logfile, 'a') as f:
@@ -18,8 +18,8 @@ for species_index in range(50, n_species + 1):
 
     if job.arkane_complete(species_index):
         with open(logfile, 'a') as f:
-            f.write(f"SPECIES {species_index}: {species_smiles} COMPLETE" + '\n')
-        print(f"SPECIES {species_index}: {species_smiles} COMPLETE")
+            f.write(f"SPECIES {species_index}: {species_smiles} already COMPLETE" + '\n')
+        print(f"SPECIES {species_index}: {species_smiles} already COMPLETE")
         continue
 
     with open(logfile, 'a') as f:

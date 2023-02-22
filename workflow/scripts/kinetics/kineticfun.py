@@ -3,11 +3,18 @@ import pandas as pd
 import re
 import os
 import glob
+import numpy as np
 import subprocess
 import autotst.reaction
 import autotst.calculator.gaussian
-import job_manager
-from hotbit import Hotbit  # TODO - move this and other autoTST dependencies elsewhere
+try:
+    import job_manager
+except ImportError:
+    pass
+try:
+    from hotbit import Hotbit  # TODO - move this and other autoTST dependencies elsewhere
+except ImportError:
+    pass
 import ase.io.gaussian
 import rmgpy.reaction
 import rmgpy.species
@@ -86,6 +93,12 @@ def smiles2reaction(reaction_smiles):
     if '[C-]#[O+]' in reaction_smiles:
         CO = rmgpy.species.Species(smiles='[C-]#[O+]')
         reaction_smiles = reaction_smiles.replace('[C-]#[O+]', 'carbonmonoxide')
+    if '[O-][N+]#C' in reaction_smiles:
+        CHNO = rmgpy.species.Species(smiles='[O-][N+]#C')
+        reaction_smiles = reaction_smiles.replace('[O-][N+]#C', 'formonitrileoxide')
+    if '[O-][N+]=C' in reaction_smiles:
+        CH2NO = rmgpy.species.Species(smiles='[O-][N+]=C')
+        reaction_smiles = reaction_smiles.replace('[O-][N+]=C', 'methylenenitroxide')
 
     reactant_token = reaction_smiles.split('_')[0]
     product_token = reaction_smiles.split('_')[1]
@@ -97,11 +110,21 @@ def smiles2reaction(reaction_smiles):
     for reactant_str in reactant_tokens:
         if reactant_str == 'carbonmonoxide':
             reactant_str = '[C-]#[O+]'
+        elif reactant_str == 'formonitrileoxide':
+            reactant_str = '[O-][N+]#C'
+        elif reactant_str == 'methylenenitroxide':
+            reactant_str = '[O-][N+]=C'
+
         reactant = rmgpy.species.Species(smiles=reactant_str)
         reactants.append(reactant)
     for product_str in product_tokens:
         if product_str == 'carbonmonoxide':
             product_str = '[C-]#[O+]'
+        elif product_str == 'formonitrileoxide':
+            product_str = '[O-][N+]#C'
+        elif product_str == 'methylenenitroxide':
+            ptoduct_str = '[O-][N+]=C'
+
         # print(product_str)
         product = rmgpy.species.Species(smiles=product_str)
         products.append(product)
@@ -371,6 +394,168 @@ def run_TS_shell_calc(reaction_index, use_reverse=False):
     shell_job.wait(check_interval=60)
 
 
+def run_TS_center_calc(reaction_index, use_reverse=False):
+    """Start a constrained saddle search with the reaction center fixed
+    """
+    reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
+    shell_dir = os.path.join(reaction_base_dir, 'shell')
+    center_dir = os.path.join(reaction_base_dir, 'center')
+    os.makedirs(center_dir, exist_ok=True)
+    logfile = os.path.join(center_dir, 'center.log')
+
+    # Check for already finished center logfiles
+    # first, return if all of them have finished
+    shell_label = 'fwd_ts_0000.log'
+    center_label = 'fwd_ts_0000.log'
+    direction = 'forward'
+    if use_reverse:
+        shell_label = 'rev_ts_0000.log'
+        center_label = 'rev_ts_0000.log'
+        direction = 'reverse'
+    shell_opt_log = os.path.join(shell_dir, shell_label)
+    center_opt_log = os.path.join(center_dir, center_label)
+
+    shell_gaussian_logs = glob.glob(os.path.join(shell_dir, shell_label[:-8] + '*.log'))
+    center_gaussian_logs = glob.glob(os.path.join(center_dir, center_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for center_opt_log in center_gaussian_logs:
+        if os.path.exists(center_opt_log):
+            status = termination_status(center_opt_log)
+            if status == 0 or status == 2 or status == 3 or status == 4 or status == 5:
+                print('Center saddle point already ran')
+                with open(logfile, 'a') as f:
+                    f.write('Center saddle point already ran\n')
+            else:
+                matches = re.search(shell_label[:-8] + '([0-9]{4})', center_opt_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+    if not incomplete_indices and len(center_gaussian_logs) > 0:
+        return True  # only if all of them ran
+
+    print('Constructing reaction in AutoTST...')
+    with open(logfile, 'a') as f:
+        f.write('Constructing reaction in AutoTST...\n')
+    reaction_smiles = reaction_index2smiles(reaction_index)
+    reaction = autotst.reaction.Reaction(label=reaction_smiles)
+    reaction.ts[direction][0].get_molecules()
+    reaction.generate_conformers(ase_calculator=Hotbit())
+    print('Done generating conformers in AutoTST...')
+    print(f'{len(reaction.ts[direction])} conformers found')
+    with open(logfile, 'a') as f:
+        f.write('Done generating conformers in AutoTST...\n')
+        f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
+    # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
+
+    # define incomplete indices
+    center_gaussian_logs = glob.glob(os.path.join(center_dir, center_label[:-8] + '*.log'))
+    incomplete_indices = []
+    for center_ts_log in center_gaussian_logs:
+        if os.path.exists(center_ts_log):
+            status = termination_status(center_ts_log)
+            if status == -1 or status == 1:
+                matches = re.search(center_label[:-8] + '([0-9]{4})', center_ts_log)
+                run_index = int(matches[1])
+                incomplete_indices.append(run_index)
+
+    restart = False
+    slurm_array_idx = []
+    for i in range(0, len(reaction.ts[direction])):
+        if i not in incomplete_indices and len(center_gaussian_logs) > 0:
+            print(f'Skipping completed index {i}')
+            restart = True
+            continue
+
+        center_label = center_label[:-8] + f'{i:04}.log'
+        shell_opt = os.path.join(shell_dir, center_label)
+
+        # skip shell conformers that didn't converge
+        status = termination_status(shell_opt)
+        if status != 0:
+            print(f'Skipping unconverged shell {i}')
+            with open(logfile, 'a') as f:
+                f.write(f'Skipping unconverged shell {i}')
+            continue
+
+        try:
+            with open(shell_opt, 'r') as f:
+                atoms = ase.io.gaussian.read_gaussian_out(f)
+                reaction.ts[direction][i]._ase_molecule = atoms
+        except IndexError:
+            # handle case where all degrees of freedom were frozen in the shell calculation
+            if len(reaction.ts[direction][i]._ase_molecule) > 3:
+                raise ValueError('Shell optimization failed to converge. Rerun it!')
+
+        slurm_array_idx.append(i)
+
+        ts = reaction.ts[direction][i]
+        gaussian = autotst.calculator.gaussian.Gaussian(conformer=ts)
+        # calc = gaussian.get_overall_calc()
+        calc = gaussian.get_center_calc()
+        calc.label = center_label[:-4]
+        calc.directory = center_dir
+        calc.parameters.pop('scratch')
+        calc.parameters.pop('multiplicity')
+        calc.parameters['mult'] = ts.rmg_molecule.multiplicity
+        calc.write_input(ts.ase_molecule)
+
+        # Get rid of double-space between xyz block and mod-redundant section
+        double_space = False
+        lines = []
+        with open(os.path.join(center_dir, calc.label + '.com'), 'r') as f:
+            lines = f.readlines()
+            for j in range(1, len(lines)):
+                if lines[j] == '\n' and lines[j - 1] == '\n':
+                    double_space = True
+                    break
+        if double_space:
+            lines = lines[0:j - 1] + lines[j:]
+            with open(os.path.join(center_dir, calc.label + '.com'), 'w') as f:
+                f.writelines(lines)
+
+    # make the overall slurm script
+    slurm_run_file = os.path.join(center_dir, f'run_center_opt.sh')
+    if restart:
+        slurm_run_file = os.path.join(center_dir, f'restart.sh')
+    slurm_settings = {
+        '--job-name': f'g16_center_{reaction_index}',
+        '--error': 'error.log',
+        '--output': 'output.log',
+        '--nodes': 1,
+        '--partition': 'west,short',
+        '--exclude': 'c5003',
+        '--mem': '20Gb',
+        '--time': '24:00:00',
+        '--cpus-per-task': 16,
+        '--array': ordered_array_str(slurm_array_idx),
+    }
+
+    slurm_file_writer = job_manager.SlurmJobFile(full_path=slurm_run_file)
+    slurm_file_writer.settings = slurm_settings
+    slurm_file_writer.content = [
+        'export GAUSS_SCRDIR=/scratch/harris.se/gaussian_scratch\n',
+        'mkdir -p $GAUSS_SCRDIR\n',
+        'module load gaussian/g16\n',
+        'source /shared/centos7/gaussian/g16/bsd/g16.profile\n\n',
+
+        'RUN_i=$(printf "%04.0f" $(($SLURM_ARRAY_TASK_ID)))\n',
+        f'fname="{center_label[:-8]}' + '${RUN_i}.com"\n\n',
+
+        'g16 $fname\n',
+    ]
+    slurm_file_writer.write_file()
+
+    # submit the job
+    start_dir = os.getcwd()
+    os.chdir(center_dir)
+    center_job = job_manager.SlurmJob()
+    slurm_cmd = f"sbatch {slurm_run_file}"
+    center_job.submit(slurm_cmd)
+
+    # only wait once all jobs have been submitted
+    os.chdir(start_dir)
+    center_job.wait(check_interval=60)
+
+
 def overall_complete(reaction_index, use_reverse=False):
     reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{int(reaction_index):04}')
     os.makedirs(reaction_base_dir, exist_ok=True)
@@ -451,7 +636,6 @@ def run_TS_overall_calc(reaction_index, use_reverse=False):
         f.write('Done generating conformers in AutoTST...\n')
         f.write(f'{len(reaction.ts[direction])} conformers found' + '\n')
     # TODO - a way to export the reaction conformers from the shell run so we don't have to repeat it here?
-
 
     # define incomplete indices
     overall_gaussian_logs = glob.glob(os.path.join(overall_dir, overall_label[:-8] + '*.log'))

@@ -399,7 +399,7 @@ def run_TS_shell_calc(reaction_index, use_reverse=False, max_combos=300, max_con
     shell_job.wait(check_interval=60)
 
 
-def run_TS_center_calc(reaction_index, use_reverse=False):
+def run_TS_center_calc(reaction_index, use_reverse=False, max_combos=300, max_conformers=12):
     """Start a constrained saddle search with the reaction center fixed
     """
     reaction_base_dir = os.path.join(DFT_DIR, 'kinetics', f'reaction_{reaction_index:04}')
@@ -443,7 +443,7 @@ def run_TS_center_calc(reaction_index, use_reverse=False):
     reaction_smiles = reaction_index2smiles(reaction_index)
     reaction = autotst.reaction.Reaction(label=reaction_smiles)
     reaction.ts[direction][0].get_molecules()
-    reaction.generate_conformers(ase_calculator=Hotbit())
+    reaction.generate_conformers(ase_calculator=Hotbit(), max_combos=max_combos, max_conformers=max_conformers)
     print('Done generating conformers in AutoTST...')
     print(f'{len(reaction.ts[direction])} conformers found')
     with open(logfile, 'a') as f:
@@ -824,7 +824,7 @@ def vibrational_analysis_confirms_ts(reaction_index):
     return False
 
 
-def run_IRC_check(reaction_index):
+def run_IRC_check(reaction_index, force_irc=False):
     # TODO get this to run using only smiles
     reaction_smiles = reaction_index2smiles(reaction_index)
     print(f'starting run_IRC_check for reaction {reaction_index} {reaction_smiles}')
@@ -846,7 +846,7 @@ def run_IRC_check(reaction_index):
     with open(os.path.join(reaction_dir, 'arkane', 'vibrational_analysis_check.txt'), 'w') as f:
         f.write(str(vib_check_result))
 
-    if vib_check_result:
+    if vib_check_result and not force_irc:
         # IRC check is confirmed with vibrational analysis
         return vib_check_result
 
